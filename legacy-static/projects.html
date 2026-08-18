@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Projects — Alex Rivera</title>
+<meta name="description" content="Portfolio of projects by Alex Rivera spanning web apps, mobile, data science, and open source.">
+<link rel="icon" href="https://placehold.co/64x64/06070d/00c9ff?text=AR">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="loader"><div class="loader-ring"></div><div class="loader-mark"><span>A</span><span>L</span><span>E</span><span>X</span><span>.</span></div></div>
+<div class="cursor-dot"></div><div class="cursor-ring"></div>
+
+<nav class="navbar">
+  <div class="container">
+    <a href="index.html" class="brand"><span class="dot"></span>Alex Rivera</a>
+    <ul class="nav-links">
+      <li><a href="index.html">Home</a></li>
+      <li><a href="about.html">About</a></li>
+      <li><a href="skills.html">Skills</a></li>
+      <li><a href="experience.html">Experience</a></li>
+      <li><a href="projects.html">Projects</a></li>
+      <li><a href="education.html">Education</a></li>
+      <li><a href="testimonials.html">Testimonials</a></li>
+      <li><a href="blog.html">Blog</a></li>
+      <li><a href="contact.html">Contact</a></li>
+    </ul>
+    <div class="nav-actions">
+      <button class="theme-toggle" aria-label="Toggle theme"><span class="knob"></span></button>
+      <button class="hamburger" aria-label="Menu"><span></span><span></span><span></span></button>
+    </div>
+  </div>
+</nav>
+
+<div class="mobile-overlay">
+  <a href="index.html">Home</a>
+  <a href="about.html">About</a>
+  <a href="skills.html">Skills</a>
+  <a href="experience.html">Experience</a>
+  <a href="projects.html">Projects</a>
+  <a href="education.html">Education</a>
+  <a href="testimonials.html">Testimonials</a>
+  <a href="blog.html">Blog</a>
+  <a href="contact.html">Contact</a>
+</div>
+
+<div class="container breadcrumb"><a href="index.html">Home</a><span>/</span>Projects</div>
+
+<section class="section">
+  <div class="container">
+    <p class="section-tag" data-reveal>Selected work</p>
+    <h1 class="section-title" data-reveal>My <span class="gradient-text">Projects</span></h1>
+    <p class="section-sub" data-reveal>A mix of web apps, mobile products, data tooling, and open source. Click any card for the full case study.</p>
+
+    <div class="filter-tabs" data-reveal>
+      <button class="active" data-filter="all">All</button>
+      <button data-filter="web">Web Apps</button>
+      <button data-filter="mobile">Mobile</button>
+      <button data-filter="data">Data Science</button>
+      <button data-filter="oss">Open Source</button>
+    </div>
+
+    <div class="masonry">
+
+      <div class="project-card tilt" data-reveal data-category="web"
+        data-project
+        data-title="Nimbus Analytics"
+        data-image="https://placehold.co/900x650/12141f/00c9ff?text=Nimbus+Analytics"
+        data-desc="A real-time analytics dashboard built for growth teams to track funnels, cohorts, and revenue at a glance."
+        data-problem="Growth teams were stitching together spreadsheets and stale weekly reports to understand product performance."
+        data-solution="Built a live dashboard on top of a streaming event pipeline, with sub-second updates and custom cohort builders."
+        data-tech="React, TypeScript, Node.js, D3.js, PostgreSQL"
+        data-features="Real-time cohort analysis|Custom funnel builder|Exportable reports|Role-based access control"
+        data-demo="#" data-repo="#">
+        <div class="thumb"><img src="https://placehold.co/900x650/12141f/00c9ff?text=Nimbus+Analytics" alt="Nimbus Analytics" loading="lazy"></div>
+        <div class="project-body">
+          <h3>Nimbus Analytics</h3>
+          <p>Real-time data dashboards for growth teams.</p>
+          <div class="tag-row"><span class="tag">React</span><span class="tag">Node.js</span><span class="tag">D3.js</span></div>
+        </div>
+      </div>
+
+      <div class="project-card tilt" data-reveal data-category="mobile"
+        data-project
+        data-title="Pulse Fitness App"
+        data-image="https://placehold.co/900x650/12141f/7b61ff?text=Pulse+Fitness"
+        data-desc="A cross-platform fitness tracker with social challenges, streaks, and adaptive workout plans."
+        data-problem="Existing fitness apps felt clinical and lonely — users dropped off after two weeks on average."
+        data-solution="Designed a social-first experience with friend challenges and streak mechanics, boosting 30-day retention by 34%."
+        data-tech="React Native, Firebase, Redux"
+        data-features="Friend challenges & leaderboards|Adaptive workout plans|Offline-first sync|Apple Health & Google Fit integration"
+        data-demo="#" data-repo="#">
+        <div class="thumb"><img src="https://placehold.co/900x650/12141f/7b61ff?text=Pulse+Fitness" alt="Pulse Fitness App" loading="lazy"></div>
+        <div class="project-body">
+          <h3>Pulse Fitness App</h3>
+          <p>Cross-platform fitness tracker with social challenges.</p>
+          <div class="tag-row"><span class="tag">React Native</span><span class="tag">Firebase</span></div>
+        </div>
+      </div>
+
+      <div class="project-card tilt" data-reveal data-category="data"
+        data-project
+        data-title="Signal ML Pipeline"
+        data-image="https://placehold.co/900x650/12141f/ff6b6b?text=Signal+ML"
+        data-desc="An anomaly detection pipeline processing millions of infrastructure events per day."
+        data-problem="On-call engineers were paged for noisy, low-signal alerts, causing fatigue and missed real incidents."
+        data-solution="Built a streaming ML pipeline that scores anomalies in real time, cutting false-positive pages by 60%."
+        data-tech="Python, Airflow, AWS Kinesis, scikit-learn"
+        data-features="Real-time anomaly scoring|Auto-tuned alert thresholds|Slack & PagerDuty integration|Historical trend dashboard"
+        data-demo="#" data-repo="#">
+        <div class="thumb"><img src="https://placehold.co/900x650/12141f/ff6b6b?text=Signal+ML" alt="Signal ML Pipeline" loading="lazy"></div>
+        <div class="project-body">
+          <h3>Signal ML Pipeline</h3>
+          <p>Anomaly detection pipeline processing 2M+ events/day.</p>
+          <div class="tag-row"><span class="tag">Python</span><span class="tag">Airflow</span><span class="tag">AWS</span></div>
+        </div>
+      </div>
+
+      <div class="project-card tilt" data-reveal data-category="oss"
+        data-project
+        data-title="formik-lite"
+        data-image="https://placehold.co/900x650/181b29/00c9ff?text=formik-lite"
+        data-desc="A 3KB form-state library for React, built as a lightweight alternative for small projects."
+        data-problem="Existing form libraries felt heavy for simple projects that just needed validation and state tracking."
+        data-solution="Wrote a minimal, dependency-free hook-based library with a familiar API, published to npm."
+        data-tech="TypeScript, Rollup, Jest"
+        data-features="Zero dependencies|Full TypeScript support|900+ weekly npm downloads|100% test coverage"
+        data-demo="#" data-repo="#">
+        <div class="thumb"><img src="https://placehold.co/900x650/181b29/00c9ff?text=formik-lite" alt="formik-lite" loading="lazy"></div>
+        <div class="project-body">
+          <h3>formik-lite</h3>
+          <p>A 3KB form-state library for React.</p>
+          <div class="tag-row"><span class="tag">TypeScript</span><span class="tag">Open Source</span></div>
+        </div>
+      </div>
+
+      <div class="project-card tilt" data-reveal data-category="web"
+        data-project
+        data-title="Ledgerly"
+        data-image="https://placehold.co/900x650/181b29/7b61ff?text=Ledgerly"
+        data-desc="A small-business invoicing and bookkeeping web app with automated reminders."
+        data-problem="Freelancers were juggling spreadsheets and manual follow-ups to get paid on time."
+        data-solution="Built an invoicing app with automated payment reminders, cutting average time-to-payment by 9 days."
+        data-tech="Next.js, Stripe, Prisma, PostgreSQL"
+        data-features="Automated payment reminders|Stripe-powered payments|Expense tracking|PDF invoice generation"
+        data-demo="#" data-repo="#">
+        <div class="thumb"><img src="https://placehold.co/900x650/181b29/7b61ff?text=Ledgerly" alt="Ledgerly" loading="lazy"></div>
+        <div class="project-body">
+          <h3>Ledgerly</h3>
+          <p>Invoicing and bookkeeping for freelancers.</p>
+          <div class="tag-row"><span class="tag">Next.js</span><span class="tag">Stripe</span></div>
+        </div>
+      </div>
+
+      <div class="project-card tilt" data-reveal data-category="data"
+        data-project
+        data-title="Census Explorer"
+        data-image="https://placehold.co/900x650/181b29/ff6b6b?text=Census+Explorer"
+        data-desc="An interactive data visualization tool exploring US census trends by region."
+        data-problem="Public census data was hard to explore without technical tooling or GIS software."
+        data-solution="Built an interactive map + chart explorer that lets journalists and researchers filter census data visually."
+        data-tech="Python, Flask, D3.js, TopoJSON"
+        data-features="Interactive choropleth maps|Time-series comparisons|CSV export|Shareable filtered views"
+        data-demo="#" data-repo="#">
+        <div class="thumb"><img src="https://placehold.co/900x650/181b29/ff6b6b?text=Census+Explorer" alt="Census Explorer" loading="lazy"></div>
+        <div class="project-body">
+          <h3>Census Explorer</h3>
+          <p>Interactive data visualization of US census trends.</p>
+          <div class="tag-row"><span class="tag">Python</span><span class="tag">D3.js</span></div>
+        </div>
+      </div>
+
+      <div class="project-card tilt" data-reveal data-category="mobile"
+        data-project
+        data-title="Wanderlist"
+        data-image="https://placehold.co/900x650/12141f/00c9ff?text=Wanderlist"
+        data-desc="A collaborative trip-planning app for groups, with shared itineraries and expense splitting."
+        data-problem="Group trip planning was scattered across chat threads, spreadsheets, and screenshots."
+        data-solution="Built a shared itinerary and expense-splitting app that consolidates trip planning into one place."
+        data-tech="Flutter, Firebase, Google Maps API"
+        data-features="Shared collaborative itineraries|Expense splitting|Offline maps|Push notifications for updates"
+        data-demo="#" data-repo="#">
+        <div class="thumb"><img src="https://placehold.co/900x650/12141f/00c9ff?text=Wanderlist" alt="Wanderlist" loading="lazy"></div>
+        <div class="project-body">
+          <h3>Wanderlist</h3>
+          <p>Collaborative trip planning for groups.</p>
+          <div class="tag-row"><span class="tag">Flutter</span><span class="tag">Firebase</span></div>
+        </div>
+      </div>
+
+      <div class="project-card tilt" data-reveal data-category="oss"
+        data-project
+        data-title="cli-sparkline"
+        data-image="https://placehold.co/900x650/12141f/7b61ff?text=cli-sparkline"
+        data-desc="A tiny command-line tool for rendering sparkline charts from piped data."
+        data-problem="Debugging numeric output in the terminal often meant piping to an external plotting tool."
+        data-solution="Wrote a zero-dependency CLI that renders sparklines directly in the terminal from stdin."
+        data-tech="Go"
+        data-features="Zero dependencies|Reads from stdin|Configurable color themes|1.2k GitHub stars"
+        data-demo="#" data-repo="#">
+        <div class="thumb"><img src="https://placehold.co/900x650/12141f/7b61ff?text=cli-sparkline" alt="cli-sparkline" loading="lazy"></div>
+        <div class="project-body">
+          <h3>cli-sparkline</h3>
+          <p>Terminal sparkline charts from piped data.</p>
+          <div class="tag-row"><span class="tag">Go</span><span class="tag">Open Source</span></div>
+        </div>
+      </div>
+
+    </div>
+
+    <div style="text-align:center; margin-top:50px;">
+      <p class="section-sub" style="margin-inline:auto;">Want to see more?</p>
+      <a href="#" target="_blank" rel="noopener" class="btn btn-ghost magnetic">Visit My GitHub Profile</a> <!-- REPLACE -->
+    </div>
+  </div>
+</section>
+
+<div class="modal-overlay" id="project-modal">
+  <div class="modal-box"></div>
+</div>
+
+<button id="back-to-top" aria-label="Back to top">↑</button>
+<div id="easter-egg"><span>🚀</span><h2 class="gradient-text">You found the secret!</h2><p>Thanks for exploring every corner of this site. — Alex</p></div>
+
+<footer>
+  <div class="container">
+    <div class="footer-top">
+      <div>
+        <a href="index.html" class="brand"><span class="dot"></span>Alex Rivera</a>
+        <p style="color:var(--text-dim); margin-top:12px; max-width:280px; font-size:0.9rem;">Software engineer &amp; creative developer building thoughtful digital products.</p>
+        <div class="social-row">
+          <a href="#" aria-label="LinkedIn" target="_blank" rel="noopener">in</a>
+          <a href="#" aria-label="GitHub" target="_blank" rel="noopener">gh</a>
+          <a href="#" aria-label="Twitter" target="_blank" rel="noopener">tw</a>
+          <a href="#" aria-label="Dribbble" target="_blank" rel="noopener">db</a>
+        </div>
+      </div>
+      <ul class="footer-links">
+        <li><a href="about.html">About</a></li>
+        <li><a href="projects.html">Projects</a></li>
+        <li><a href="experience.html">Experience</a></li>
+        <li><a href="blog.html">Blog</a></li>
+        <li><a href="contact.html">Contact</a></li>
+      </ul>
+    </div>
+    <div class="footer-bottom">
+      <span>© <span data-year></span> Alex Rivera. Designed &amp; Built by Alex Rivera.</span>
+      <span>Made with care in San Francisco, CA</span>
+    </div>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>
