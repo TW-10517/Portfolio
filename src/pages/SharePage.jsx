@@ -1,60 +1,82 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { getPublished, incrementViews } from "../store/usePortfolioStore.js";
+import { api, ApiError } from "../utils/api.js";
 import { PortfolioView } from "../components/portfolio/PortfolioView.jsx";
 import { PasswordGate } from "../components/share/PasswordGate.jsx";
 
 export function SharePage() {
   const { slug } = useParams();
-  const snapshot = useMemo(() => getPublished(slug), [slug]);
-  const [unlocked, setUnlocked] = useState(false);
-  const viewCounted = useRef(false);
+  const [status, setStatus] = useState("loading"); // loading | notFound | passwordLocked | error | ready
+  const [portfolioData, setPortfolioData] = useState(null);
+  const [name, setName] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+
   useEffect(() => {
-    viewCounted.current = false;
+    let cancelled = false;
+    setStatus("loading");
+    api
+      .getBySlug(slug)
+      .then(({ portfolio }) => {
+        if (cancelled) return;
+        // Private portfolios deliberately 404 (so the endpoint can't be used
+        // to probe which slugs exist), so they land in the notFound branch
+        // below rather than being reported as private here.
+        if (portfolio.visibility === "password") {
+          setStatus("passwordLocked");
+        } else {
+          setPortfolioData(portfolio.data);
+          setName(portfolio.data.profile.name);
+          document.title = `${portfolio.data.profile.name} — Portfolio`;
+          setStatus("ready");
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.status === 404) setStatus("notFound");
+        else {
+          setErrorMessage(err.message || "Something went wrong loading this portfolio.");
+          setStatus("error");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [slug]);
 
-  useEffect(() => {
-    if (snapshot && document?.title !== undefined) {
-      document.title = `${snapshot.data.profile.name} — Portfolio`;
-    }
-  }, [snapshot]);
+  const unlock = async (password) => {
+    const { data } = await api.unlockBySlug(slug, password);
+    setPortfolioData(data);
+    setName(data.profile.name);
+    document.title = `${data.profile.name} — Portfolio`;
+    setStatus("ready");
+  };
 
-  useEffect(() => {
-    if (!snapshot || viewCounted.current) return;
-    if (snapshot.visibility === "public" || (snapshot.visibility === "password" && unlocked)) {
-      incrementViews(slug);
-      viewCounted.current = true;
-    }
-  }, [snapshot, unlocked, slug]);
+  if (status === "loading") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-950">
+        <p className="text-sm text-slate-500">Loading…</p>
+      </div>
+    );
+  }
 
-  if (!snapshot) {
+  if (status === "notFound" || status === "error") {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-950 text-center px-4">
         <div>
           <div className="text-4xl mb-4">🧭</div>
-          <h1 className="text-white font-head text-xl font-semibold mb-2">No portfolio found at this link</h1>
-          <p className="text-slate-400 text-sm mb-6">It may be unpublished, or this link only works on the device it was published from.</p>
+          <h1 className="text-white font-head text-xl font-semibold mb-2">
+            {status === "error" ? "Couldn't load this portfolio" : "No portfolio found at this link"}
+          </h1>
+          <p className="text-slate-400 text-sm mb-6">{status === "error" ? errorMessage : "It may be unpublished, or the link is incorrect."}</p>
           <Link to="/editor" className="text-cyan-400 text-sm underline">Go to Editor</Link>
         </div>
       </div>
     );
   }
 
-  if (snapshot.visibility === "private") {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-center px-4">
-        <div>
-          <div className="text-4xl mb-4">🚫</div>
-          <h1 className="text-white font-head text-xl font-semibold mb-2">This portfolio is private</h1>
-          <p className="text-slate-400 text-sm">The owner has disabled public access to this link.</p>
-        </div>
-      </div>
-    );
+  if (status === "passwordLocked") {
+    return <PasswordGate name={name} onUnlock={unlock} />;
   }
 
-  if (snapshot.visibility === "password" && !unlocked) {
-    return <PasswordGate correctPassword={snapshot.password} name={snapshot.data.profile.name} onUnlock={() => setUnlocked(true)} />;
-  }
-
-  return <PortfolioView data={snapshot.data} showBrand />;
+  return <PortfolioView data={portfolioData} showBrand />;
 }

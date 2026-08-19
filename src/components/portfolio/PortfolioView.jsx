@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { PortfolioThemeContext, buildPalette } from "./ThemeContext.jsx";
 import { useEffectiveMode, useGoogleFonts } from "../../hooks/useTheme.js";
+import { sanitizeCustomCss } from "../../utils/sanitizeCss.js";
 import { Navbar } from "./Navbar.jsx";
 import { Hero } from "./Hero.jsx";
 import { About } from "./About.jsx";
@@ -21,6 +22,7 @@ export function PortfolioView({ data, scrollRootEl, showBrand = true }) {
 
   const palette = useMemo(() => buildPalette(mode), [mode]);
   const animationLevel = data.theme.animationLevel;
+  const safeCustomCss = useMemo(() => sanitizeCustomCss(data.theme.customCss), [data.theme.customCss]);
 
   const ctx = useMemo(
     () => ({
@@ -46,7 +48,7 @@ export function PortfolioView({ data, scrollRootEl, showBrand = true }) {
           "--font-head": data.theme.headingFont + ", sans-serif",
         }}
       >
-        {data.theme.customCss && <style>{data.theme.customCss}</style>}
+        {safeCustomCss && <style>{safeCustomCss}</style>}
         <Navbar scrollRootEl={scrollRootEl} />
         <Hero />
         <About />

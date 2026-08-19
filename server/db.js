@@ -31,3 +31,21 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_portfolios_user_id ON portfolios(user_id);
 `);
+
+// Idempotent column migrations — SQLite has no "ADD COLUMN IF NOT EXISTS",
+// so we check PRAGMA table_info() and only add columns that are missing.
+// Keeps existing dev databases (and this file's own history) working
+// without a separate migration runner.
+function addColumnIfMissing(table, column, definition) {
+  const existing = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!existing.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+addColumnIfMissing("users", "token_version", "INTEGER NOT NULL DEFAULT 0");
+addColumnIfMissing("users", "email_verified", "INTEGER NOT NULL DEFAULT 0");
+addColumnIfMissing("users", "verify_token_hash", "TEXT");
+addColumnIfMissing("users", "verify_token_expires", "TEXT");
+addColumnIfMissing("users", "reset_token_hash", "TEXT");
+addColumnIfMissing("users", "reset_token_expires", "TEXT");

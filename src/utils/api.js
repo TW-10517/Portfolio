@@ -40,10 +40,18 @@ async function request(path, { method = "GET", body, token } = {}) {
 export const api = {
   register: (data) => request("/auth/register", { method: "POST", body: data }),
   login: (data) => request("/auth/login", { method: "POST", body: data }),
+  logout: (token) => request("/auth/logout", { method: "POST", token }),
   me: (token) => request("/auth/me", { token }),
+  forgotPassword: (email) => request("/auth/forgot-password", { method: "POST", body: { email } }),
+  resetPassword: (token, password) => request("/auth/reset-password", { method: "POST", body: { token, password } }),
+  verifyEmail: (token) => request("/auth/verify-email", { method: "POST", body: { token } }),
+  resendVerification: (token) => request("/auth/resend-verification", { method: "POST", token }),
+  changePassword: (token, currentPassword, newPassword) =>
+    request("/auth/change-password", { method: "POST", body: { currentPassword, newPassword }, token }),
 
   getMine: (token) => request("/portfolios/mine", { token }),
   saveMine: (token, body) => request("/portfolios/mine", { method: "PUT", body, token }),
+  deleteMine: (token) => request("/portfolios/mine", { method: "DELETE", token }),
 
   getBySlug: (slug) => request(`/portfolios/by-slug/${encodeURIComponent(slug)}`),
   unlockBySlug: (slug, password) =>

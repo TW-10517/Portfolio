@@ -97,6 +97,9 @@ export function TabTheme() {
       </Field>
 
       <SubHeading>Custom CSS (advanced)</SubHeading>
+      <p className="text-[11px] text-slate-500 -mt-2 mb-2">
+        Applies to your published page. For visitors' safety, <code>url()</code>, <code>@import</code>, and fixed-position overlays are stripped.
+      </p>
       <TextArea
         rows={5}
         value={theme.customCss}

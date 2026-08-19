@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { usePortfolioStore } from "../../store/usePortfolioStore.js";
+import { useAuthStore } from "../../store/useAuthStore.js";
+import { api, ApiError } from "../../utils/api.js";
 import { Modal } from "../ui/Modal.jsx";
 import { Button } from "../ui/Button.jsx";
 import { Field, TextInput, Select } from "../ui/Field.jsx";
@@ -8,13 +10,17 @@ import { slugify } from "../../utils/slug.js";
 
 export function ShareModal({ open, onClose }) {
   const data = usePortfolioStore((s) => s.data);
-  const publish = usePortfolioStore((s) => s.publish);
+  const saveToServer = usePortfolioStore((s) => s.saveToServer);
+  const token = useAuthStore((s) => s.token);
   const [slug, setSlug] = useState(data.meta.slug || slugify(data.profile.name));
   const [visibility, setVisibility] = useState(data.meta.visibility || "public");
-  const [password, setPassword] = useState(data.meta.password || "");
+  const [password, setPassword] = useState("");
   const [qr, setQr] = useState("");
   const [published, setPublished] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [unpublishing, setUnpublishing] = useState(false);
+  const [error, setError] = useState("");
 
   const shareUrl = `${window.location.origin}${window.location.pathname}#/p/${slugify(slug)}`;
 
@@ -23,11 +29,34 @@ export function ShareModal({ open, onClose }) {
     QRCode.toDataURL(shareUrl, { margin: 1, width: 220, color: { dark: "#0b0c12", light: "#ffffff" } }).then(setQr);
   }, [published, shareUrl]);
 
-  const doPublish = () => {
-    const clean = slugify(slug) || slugify(data.profile.name) || "my-portfolio";
-    setSlug(clean);
-    publish(clean, visibility, password);
-    setPublished(true);
+  const doPublish = async () => {
+    setError("");
+    setSaving(true);
+    try {
+      const portfolio = await saveToServer(token, { slug: slugify(slug) || slugify(data.profile.name) || "my-portfolio", visibility, password });
+      setSlug(portfolio.slug);
+      setPassword(""); // never keep the plaintext password in memory/UI longer than the request
+      setPublished(true);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't publish right now. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const doUnpublish = async () => {
+    if (!confirm("Remove your published portfolio? The share link will stop working and the slug will be freed up.")) return;
+    setError("");
+    setUnpublishing(true);
+    try {
+      await api.deleteMine(token);
+      setPublished(false);
+      setQr("");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't unpublish right now. Please try again.");
+    } finally {
+      setUnpublishing(false);
+    }
   };
 
   const copyLink = async () => {
@@ -51,7 +80,7 @@ export function ShareModal({ open, onClose }) {
   return (
     <Modal open={open} onClose={onClose} wide>
       <h2 className="text-xl font-head font-bold text-white mb-1">Share your portfolio</h2>
-      <p className="text-sm text-slate-400 mb-6">Publish a snapshot of your current portfolio to a public link.</p>
+      <p className="text-sm text-slate-400 mb-6">Publish your portfolio to your account — accessible from any device at a public link.</p>
 
       <div className="grid sm:grid-cols-2 gap-3 mb-4">
         <Field label="Custom slug">
@@ -74,14 +103,22 @@ export function ShareModal({ open, onClose }) {
       </div>
 
       {visibility === "password" && (
-        <Field label="Gate password">
+        <Field label="Gate password" hint={published ? "Leave blank to keep the current password." : undefined}>
           <TextInput value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Set a password" />
         </Field>
       )}
 
-      <Button onClick={doPublish} className="mb-6">
-        {published ? "Republish" : "Publish"}
-      </Button>
+      {error && <p className="text-sm text-red-400 mb-3">{error}</p>}
+      <div className="flex items-center gap-2 mb-6">
+        <Button onClick={doPublish} disabled={saving || unpublishing}>
+          {saving ? "Publishing…" : published ? "Republish" : "Publish"}
+        </Button>
+        {published && (
+          <Button variant="danger" onClick={doUnpublish} disabled={saving || unpublishing}>
+            {unpublishing ? "Removing…" : "Unpublish"}
+          </Button>
+        )}
+      </div>
 
       {published && (
         <div className="border-t border-slate-800 pt-5 space-y-5">
@@ -101,9 +138,6 @@ export function ShareModal({ open, onClose }) {
               <Button variant="ghost" size="sm" onClick={() => socialShare("email")}>Email</Button>
             </div>
           </div>
-          <p className="text-[11px] text-slate-500">
-            This link works on this browser/device (MVP uses local storage — no server). Use Export JSON if you need to move your portfolio elsewhere.
-          </p>
         </div>
       )}
     </Modal>

@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { db } from "../db.js";
-import { requireAuth } from "../auth.js";
+import { requireAuth, hashPassword, verifyPassword } from "../auth.js";
 
 export const portfolioRouter = Router();
+
+const VISIBILITIES = new Set(["public", "private", "password"]);
 
 function slugify(str) {
   return (str || "")
@@ -15,14 +17,14 @@ function slugify(str) {
     .replace(/^-|-$/g, "");
 }
 
-// Get the current user's own portfolio (creates an empty draft row on first access)
+// Get the current user's own portfolio (null if they haven't saved one yet)
 portfolioRouter.get("/mine", requireAuth, (req, res) => {
   const row = db.prepare("SELECT * FROM portfolios WHERE user_id = ?").get(req.user.sub);
-  res.json({ portfolio: row || null });
+  res.json({ portfolio: row ? { ...row, data: JSON.parse(row.data) } : null });
 });
 
 // Save/update the current user's portfolio (auto-creates row on first save)
-portfolioRouter.put("/mine", requireAuth, (req, res) => {
+portfolioRouter.put("/mine", requireAuth, async (req, res) => {
   const { data, slug: desiredSlug, visibility, password } = req.body || {};
   if (!data) return res.status(400).json({ error: "Missing portfolio data." });
 
@@ -38,8 +40,14 @@ portfolioRouter.put("/mine", requireAuth, (req, res) => {
   }
 
   const dataJson = JSON.stringify(data);
-  const vis = visibility === "password" ? "password" : "public";
-  const pw = vis === "password" ? password || "" : "";
+  const vis = VISIBILITIES.has(visibility) ? visibility : "public";
+  // Never store the visitor-facing unlock password in plaintext, same as
+  // account passwords. Only re-hash when the caller actually sent a new
+  // password — an empty string here just means "keep the existing one".
+  let pw = "";
+  if (vis === "password") {
+    pw = password ? await hashPassword(password) : existing?.password || "";
+  }
 
   if (existing) {
     db.prepare(
@@ -52,34 +60,49 @@ portfolioRouter.put("/mine", requireAuth, (req, res) => {
   }
 
   const row = db.prepare("SELECT * FROM portfolios WHERE user_id = ?").get(req.user.sub);
-  res.json({ portfolio: row });
+  res.json({ portfolio: { ...row, data: JSON.parse(row.data) } });
+});
+
+// Removes the user's published portfolio entirely (frees the slug, kills the
+// share link). Distinct from setting visibility to "private", which keeps the
+// row and the slug reserved.
+portfolioRouter.delete("/mine", requireAuth, (req, res) => {
+  db.prepare("DELETE FROM portfolios WHERE user_id = ?").run(req.user.sub);
+  res.status(204).end();
 });
 
 // Public: fetch a published portfolio by slug (no auth) — this is what the share link hits.
-// If password-protected, `data` is withheld entirely until /unlock succeeds — the client
-// must never receive portfolio contents before a correct password is verified server-side.
+// If password-protected, `data` is withheld entirely until /unlock succeeds, and if private,
+// `data` is never returned at all — the client must never receive portfolio contents before
+// the visibility/password rules actually allow it.
 portfolioRouter.get("/by-slug/:slug", (req, res) => {
   const row = db.prepare("SELECT * FROM portfolios WHERE slug = ?").get(req.params.slug);
   if (!row) return res.status(404).json({ error: "No portfolio found at this link." });
 
-  db.prepare("UPDATE portfolios SET views = views + 1 WHERE id = ?").run(row.id);
-
-  if (row.visibility === "password") {
-    return res.json({ portfolio: { slug: row.slug, visibility: "password", protected: true, views: row.views + 1 } });
+  // Private portfolios answer exactly like a nonexistent slug, so this
+  // endpoint can't be used to discover which slugs are taken/real.
+  if (row.visibility === "private") {
+    return res.status(404).json({ error: "No portfolio found at this link." });
   }
 
-  res.json({
-    portfolio: { slug: row.slug, data: JSON.parse(row.data), visibility: row.visibility, views: row.views + 1 },
-  });
+  if (row.visibility === "password") {
+    return res.json({ portfolio: { slug: row.slug, visibility: "password", protected: true, views: row.views } });
+  }
+
+  db.prepare("UPDATE portfolios SET views = views + 1 WHERE id = ?").run(row.id);
+  res.json({ portfolio: { slug: row.slug, data: JSON.parse(row.data), visibility: "public", views: row.views + 1 } });
 });
 
 // Password check for a protected portfolio (keeps the password server-side)
-portfolioRouter.post("/by-slug/:slug/unlock", (req, res) => {
+portfolioRouter.post("/by-slug/:slug/unlock", async (req, res) => {
   const row = db.prepare("SELECT * FROM portfolios WHERE slug = ?").get(req.params.slug);
   if (!row) return res.status(404).json({ error: "No portfolio found at this link." });
-  if (row.visibility !== "password") return res.json({ unlocked: true, data: JSON.parse(row.data) });
+  if (row.visibility !== "password") return res.status(400).json({ error: "This portfolio isn't password-protected." });
 
   const { password } = req.body || {};
-  if (password !== row.password) return res.status(401).json({ error: "Incorrect password." });
+  const valid = !!password && !!row.password && (await verifyPassword(password, row.password));
+  if (!valid) return res.status(401).json({ error: "Incorrect password." });
+
+  db.prepare("UPDATE portfolios SET views = views + 1 WHERE id = ?").run(row.id);
   res.json({ unlocked: true, data: JSON.parse(row.data) });
 });

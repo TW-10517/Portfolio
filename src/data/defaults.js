@@ -194,7 +194,6 @@ export function createDefaultPortfolio() {
     meta: {
       slug: "alex-rivera",
       visibility: "public",
-      password: "",
       views: 0,
     },
   };

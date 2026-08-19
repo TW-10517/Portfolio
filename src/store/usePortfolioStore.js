@@ -1,15 +1,16 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { createDefaultPortfolio } from "../data/defaults.js";
+import { api } from "../utils/api.js";
 
 const DRAFT_KEY = "portfolio-builder:draft";
-const PUBLISH_PREFIX = "portfolio-builder:published:";
 
 export const usePortfolioStore = create(
   persist(
     (set, get) => ({
       data: createDefaultPortfolio(),
-      lastSavedAt: null,
+      lastSavedAt: null, // last local edit (this browser)
+      lastPublishedAt: null, // last successful push to the server
 
       update: (path, value) => {
         set((state) => {
@@ -22,6 +23,13 @@ export const usePortfolioStore = create(
       setAll: (data) => set({ data, lastSavedAt: Date.now() }),
 
       resetToDefaults: () => set({ data: createDefaultPortfolio(), lastSavedAt: Date.now() }),
+
+      // Used on logout — this store's localStorage draft is per-browser, not
+      // per-account, so without clearing it a second user signing into the
+      // same browser could have their real server data blocked from loading
+      // by loadFromServer's "keep the newer local draft" check treating the
+      // previous user's leftover edits as if they were the new user's own.
+      clearLocalDraft: () => set({ data: createDefaultPortfolio(), lastSavedAt: null, lastPublishedAt: null }),
 
       // --- list helpers (used by ListManager) ---
       addItem: (path, item) => {
@@ -62,64 +70,57 @@ export const usePortfolioStore = create(
         });
       },
 
-      // --- publish / share ---
-      publish: (slug, visibility, password) => {
-        const data = get().data;
-        const snapshot = {
-          data,
-          visibility,
-          password: visibility === "password" ? password : "",
-          publishedAt: Date.now(),
-          views: 0,
-        };
-        try {
-          const existing = localStorage.getItem(PUBLISH_PREFIX + slug);
-          if (existing) {
-            const parsed = JSON.parse(existing);
-            snapshot.views = parsed.views || 0;
-          }
-        } catch {}
-        localStorage.setItem(PUBLISH_PREFIX + slug, JSON.stringify(snapshot));
+      // --- server-backed publish / share ---
+      // Saves the current draft to the signed-in user's portfolio row and
+      // makes it reachable at /p/:slug according to visibility. Password
+      // protection is enforced server-side (see server/routes/portfolio.js) —
+      // the raw password is never persisted, client- or server-side.
+      saveToServer: async (token, { slug, visibility, password }) => {
+        const { portfolio } = await api.saveMine(token, { data: get().data, slug, visibility, password });
+        const now = Date.now();
         set((state) => ({
-          data: { ...state.data, meta: { ...state.data.meta, slug, visibility } },
+          data: { ...state.data, meta: { slug: portfolio.slug, visibility: portfolio.visibility, views: portfolio.views } },
+          lastSavedAt: now,
+          lastPublishedAt: now,
         }));
-        return slug;
+        return portfolio;
       },
 
-      unpublish: (slug) => {
-        localStorage.removeItem(PUBLISH_PREFIX + slug);
-      },
+      // Pulls the signed-in user's last-saved portfolio from the server —
+      // used on login/mount so editing continues across devices/browsers
+      // instead of being tied to one browser's localStorage. Only actually
+      // overwrites the local draft if the server's copy is newer: this runs
+      // on every EditorPage mount (including plain page refreshes), and a
+      // blind overwrite here previously meant any local edit made after the
+      // last Publish was silently discarded the next time the page reloaded.
+      loadFromServer: async (token) => {
+        const { portfolio } = await api.getMine(token);
+        if (!portfolio) return "no-server-copy";
 
-      isPublished: (slug) => {
-        return !!localStorage.getItem(PUBLISH_PREFIX + slug);
+        const serverUpdatedMs = portfolio.updated_at ? new Date(portfolio.updated_at.replace(" ", "T") + "Z").getTime() : 0;
+        const localLastSavedAt = get().lastSavedAt;
+        if (localLastSavedAt && localLastSavedAt >= serverUpdatedMs) {
+          return "kept-local-draft";
+        }
+
+        const stamp = serverUpdatedMs || Date.now();
+        set({
+          data: { ...portfolio.data, meta: { slug: portfolio.slug, visibility: portfolio.visibility, views: portfolio.views } },
+          lastSavedAt: stamp,
+          lastPublishedAt: stamp,
+        });
+        return "loaded-server-copy";
       },
     }),
     {
       name: DRAFT_KEY,
-      partialize: (state) => ({ data: state.data }),
+      // lastSavedAt must survive reloads too — it's what lets loadFromServer
+      // tell a fresh device (no local draft yet) apart from a page refresh
+      // with unpublished local edits (don't clobber those).
+      partialize: (state) => ({ data: state.data, lastSavedAt: state.lastSavedAt, lastPublishedAt: state.lastPublishedAt }),
     }
   )
 );
-
-export function getPublished(slug) {
-  try {
-    const raw = localStorage.getItem(PUBLISH_PREFIX + slug);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
-export function incrementViews(slug) {
-  const raw = localStorage.getItem(PUBLISH_PREFIX + slug);
-  if (!raw) return;
-  try {
-    const parsed = JSON.parse(raw);
-    parsed.views = (parsed.views || 0) + 1;
-    localStorage.setItem(PUBLISH_PREFIX + slug, JSON.stringify(parsed));
-  } catch {}
-}
 
 function setDeep(obj, path, value) {
   const keys = Array.isArray(path) ? path : path.split(".");

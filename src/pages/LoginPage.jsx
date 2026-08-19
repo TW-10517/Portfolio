@@ -53,10 +53,15 @@ export function LoginPage() {
           </Field>
           {errors.email && <p className="text-xs text-red-400 -mt-3 mb-3">{errors.email}</p>}
 
-          <Field label="Password">
-            <TextInput type="password" value={form.password} onChange={set("password")} autoComplete="current-password" />
-          </Field>
-          {errors.password && <p className="text-xs text-red-400 -mt-3 mb-3">{errors.password}</p>}
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="block text-xs font-medium text-slate-400">Password</span>
+            <Link to="/forgot-password" className="text-xs text-cyan-400 hover:text-cyan-300">
+              Forgot password?
+            </Link>
+          </div>
+          <TextInput type="password" value={form.password} onChange={set("password")} autoComplete="current-password" className="mb-1" />
+          {errors.password && <p className="text-xs text-red-400 mb-3">{errors.password}</p>}
+          {!errors.password && <div className="mb-3" />}
 
           {errors.form && <p className="text-sm text-red-400 mb-4">{errors.form}</p>}
 

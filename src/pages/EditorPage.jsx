@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { usePortfolioStore } from "../store/usePortfolioStore.js";
 import { useAuthStore } from "../store/useAuthStore.js";
 import { downloadJson, readJsonFile } from "../utils/exportImport.js";
+import { api } from "../utils/api.js";
 import { Button } from "../components/ui/Button.jsx";
 import { ShareModal } from "../components/share/ShareModal.jsx";
 import { PreviewPane } from "../components/editor/PreviewPane.jsx";
@@ -16,6 +17,7 @@ import { TabTestimonials } from "../components/editor/TabTestimonials.jsx";
 import { TabBlog } from "../components/editor/TabBlog.jsx";
 import { TabContact } from "../components/editor/TabContact.jsx";
 import { TabTheme } from "../components/editor/TabTheme.jsx";
+import { TabAIVideo } from "../components/editor/TabAIVideo.jsx";
 
 const MIN_EDITOR_WIDTH = 320;
 const MIN_PREVIEW_WIDTH = 340;
@@ -32,11 +34,14 @@ const TABS = [
   ["blog", "Blog", TabBlog],
   ["contact", "Contact", TabContact],
   ["theme", "Theme & Design", TabTheme],
+  ["aivideo", "🎬 AI Video", TabAIVideo],
 ];
 
 export function EditorPage() {
   const [tab, setTab] = useState("profile");
   const [mobileView, setMobileView] = useState("editor");
+  const [verifyBannerDismissed, setVerifyBannerDismissed] = useState(false);
+  const [resendNote, setResendNote] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
   const [editorWidth, setEditorWidth] = useState(() => Number(localStorage.getItem(WIDTH_KEY)) || 440);
   const [dragging, setDragging] = useState(false);
@@ -45,12 +50,26 @@ export function EditorPage() {
   const data = usePortfolioStore((s) => s.data);
   const setAll = usePortfolioStore((s) => s.setAll);
   const resetToDefaults = usePortfolioStore((s) => s.resetToDefaults);
+  const loadFromServer = usePortfolioStore((s) => s.loadFromServer);
+  const clearLocalDraft = usePortfolioStore((s) => s.clearLocalDraft);
   const lastSavedAt = usePortfolioStore((s) => s.lastSavedAt);
+  const lastPublishedAt = usePortfolioStore((s) => s.lastPublishedAt);
+  const hasUnpublishedChanges = !!lastSavedAt && (!lastPublishedAt || lastSavedAt > lastPublishedAt);
   const user = useAuthStore((s) => s.user);
+  const token = useAuthStore((s) => s.token);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
 
+  // Pulls in whatever this account last published/saved server-side, so
+  // editing continues across devices instead of being stuck in one
+  // browser's localStorage. A brand-new account has nothing saved yet
+  // (loadFromServer resolves false) and just keeps the local draft.
+  useEffect(() => {
+    if (token) loadFromServer(token).catch(() => {});
+  }, [token, loadFromServer]);
+
   const ActiveTab = TABS.find((t) => t[0] === tab)[2];
+  const isStudioTab = tab === "aivideo";
 
   const handleImport = async (e) => {
     const file = e.target.files?.[0];
@@ -116,8 +135,19 @@ export function EditorPage() {
           <span className="text-lg">🧩</span> Portfolio Builder
         </div>
         <div className="flex items-center gap-3">
-          <span className="hidden sm:inline text-xs text-slate-500">
-            {lastSavedAt ? `Saved ${new Date(lastSavedAt).toLocaleTimeString()}` : "Not saved yet"}
+          <span
+            className={`hidden sm:inline text-xs ${hasUnpublishedChanges ? "text-amber-400" : "text-slate-500"}`}
+            title={
+              hasUnpublishedChanges
+                ? "Saved in this browser only — use Share to publish these changes to your account."
+                : "Your published portfolio is up to date."
+            }
+          >
+            {!lastSavedAt
+              ? "Not saved yet"
+              : hasUnpublishedChanges
+              ? "● Unpublished changes"
+              : `Published ${new Date(lastPublishedAt).toLocaleTimeString()}`}
           </span>
           <label className="text-xs text-slate-400 hover:text-white cursor-pointer">
             Import
@@ -137,6 +167,7 @@ export function EditorPage() {
             <button
               onClick={() => {
                 logout();
+                clearLocalDraft();
                 navigate("/login");
               }}
               className="text-xs text-slate-400 hover:text-red-400"
@@ -147,55 +178,97 @@ export function EditorPage() {
         </div>
       </header>
 
-      <div className="md:hidden flex border-b border-slate-800 shrink-0">
-        <button
-          onClick={() => setMobileView("editor")}
-          className={`flex-1 py-2.5 text-sm font-medium ${mobileView === "editor" ? "text-white border-b-2 border-cyan-400" : "text-slate-500"}`}
-        >
-          Editor
-        </button>
-        <button
-          onClick={() => setMobileView("preview")}
-          className={`flex-1 py-2.5 text-sm font-medium ${mobileView === "preview" ? "text-white border-b-2 border-cyan-400" : "text-slate-500"}`}
-        >
-          Preview
-        </button>
-      </div>
-
-      <div ref={splitRef} className="flex-1 min-h-0 flex relative">
-        <div
-          className={`w-full shrink-0 border-r border-slate-800 flex ${mobileView === "preview" ? "hidden md:flex" : "flex"}`}
-          style={isDesktop ? { width: editorWidth } : undefined}
-        >
-          <nav className="w-36 sm:w-40 shrink-0 border-r border-slate-800 overflow-y-auto py-2">
-            {TABS.map(([key, label]) => (
-              <button
-                key={key}
-                onClick={() => setTab(key)}
-                className={`w-full text-left px-4 py-2.5 text-xs font-medium transition border-l-2 ${
-                  tab === key ? "text-white border-cyan-400 bg-slate-900" : "text-slate-500 border-transparent hover:text-slate-300"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </nav>
-          <div className="flex-1 overflow-y-auto px-5 py-6">
-            <ActiveTab />
+      {user && !user.emailVerified && !verifyBannerDismissed && (
+        <div className="flex items-center justify-between gap-3 px-5 py-2 bg-amber-400/10 border-b border-amber-400/20 text-xs text-amber-300 shrink-0">
+          <span>
+            {resendNote || "Verify your email to secure your account. Check the API server's console for your verification link (no email provider is configured)."}
+          </span>
+          <div className="flex items-center gap-3 shrink-0">
+            <button
+              onClick={async () => {
+                setResendNote("Sending…");
+                try {
+                  const { message } = await api.resendVerification(token);
+                  setResendNote(message);
+                } catch {
+                  setResendNote("Couldn't send a new link. Please try again.");
+                }
+              }}
+              className="underline hover:text-amber-200"
+            >
+              Resend link
+            </button>
+            <button onClick={() => setVerifyBannerDismissed(true)} className="text-amber-400/70 hover:text-amber-300">
+              Dismiss
+            </button>
           </div>
         </div>
+      )}
 
-        <div
-          onMouseDown={startDrag}
-          className={`hidden md:flex w-1.5 shrink-0 cursor-col-resize items-center justify-center group relative z-10 ${dragging ? "bg-cyan-400/40" : "hover:bg-cyan-400/20"}`}
-          title="Drag to resize"
+      {!isStudioTab && (
+        <div className="md:hidden flex border-b border-slate-800 shrink-0">
+          <button
+            onClick={() => setMobileView("editor")}
+            className={`flex-1 py-2.5 text-sm font-medium ${mobileView === "editor" ? "text-white border-b-2 border-cyan-400" : "text-slate-500"}`}
+          >
+            Editor
+          </button>
+          <button
+            onClick={() => setMobileView("preview")}
+            className={`flex-1 py-2.5 text-sm font-medium ${mobileView === "preview" ? "text-white border-b-2 border-cyan-400" : "text-slate-500"}`}
+          >
+            Preview
+          </button>
+        </div>
+      )}
+
+      <div ref={splitRef} className="flex-1 min-h-0 flex relative">
+        <nav
+          className={`w-36 sm:w-40 shrink-0 border-r border-slate-800 overflow-y-auto py-2 md:block ${
+            isStudioTab || mobileView === "editor" ? "block" : "hidden"
+          }`}
         >
-          <span className="w-0.5 h-8 rounded-full bg-slate-700 group-hover:bg-cyan-400 transition-colors" />
-        </div>
+          {TABS.map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`w-full text-left px-4 py-2.5 text-xs font-medium transition border-l-2 ${
+                tab === key ? "text-white border-cyan-400 bg-slate-900" : "text-slate-500 border-transparent hover:text-slate-300"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
 
-        <div className={`flex-1 min-w-0 ${mobileView === "editor" ? "hidden md:block" : "block"}`}>
-          <PreviewPane />
-        </div>
+        {isStudioTab ? (
+          <div className="flex-1 min-w-0 overflow-y-auto">
+            <ActiveTab />
+          </div>
+        ) : (
+          <>
+            <div
+              className={`w-full shrink-0 border-r border-slate-800 flex ${mobileView === "preview" ? "hidden md:flex" : "flex"}`}
+              style={isDesktop ? { width: editorWidth } : undefined}
+            >
+              <div className="flex-1 overflow-y-auto px-5 py-6">
+                <ActiveTab />
+              </div>
+            </div>
+
+            <div
+              onMouseDown={startDrag}
+              className={`hidden md:flex w-1.5 shrink-0 cursor-col-resize items-center justify-center group relative z-10 ${dragging ? "bg-cyan-400/40" : "hover:bg-cyan-400/20"}`}
+              title="Drag to resize"
+            >
+              <span className="w-0.5 h-8 rounded-full bg-slate-700 group-hover:bg-cyan-400 transition-colors" />
+            </div>
+
+            <div className={`flex-1 min-w-0 ${mobileView === "editor" ? "hidden md:block" : "block"}`}>
+              <PreviewPane />
+            </div>
+          </>
+        )}
       </div>
 
       <ShareModal open={shareOpen} onClose={() => setShareOpen(false)} />
