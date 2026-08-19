@@ -48,6 +48,7 @@ export const api = {
   resendVerification: (token) => request("/auth/resend-verification", { method: "POST", token }),
   changePassword: (token, currentPassword, newPassword) =>
     request("/auth/change-password", { method: "POST", body: { currentPassword, newPassword }, token }),
+  deleteAccount: (token, password) => request("/auth/me", { method: "DELETE", body: { password }, token }),
 
   getMine: (token) => request("/portfolios/mine", { token }),
   saveMine: (token, body) => request("/portfolios/mine", { method: "PUT", body, token }),

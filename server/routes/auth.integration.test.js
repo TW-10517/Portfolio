@@ -189,6 +189,50 @@ describe("POST /api/auth/change-password", () => {
   });
 });
 
+describe("DELETE /api/auth/me", () => {
+  it("requires auth", async () => {
+    const res = await request(app).delete("/api/auth/me").send({ password: "letmein1" });
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects a wrong password", async () => {
+    const email = uniqueEmail();
+    const reg = await request(app).post("/api/auth/register").send({ name: "Ada", email, password: "letmein1" });
+    const res = await request(app).delete("/api/auth/me").set("Authorization", `Bearer ${reg.body.token}`).send({ password: "wrong-one" });
+    expect(res.status).toBe(401);
+    // account must still exist
+    expect((await request(app).post("/api/auth/login").send({ email, password: "letmein1" })).status).toBe(200);
+  });
+
+  it("deletes the account, its portfolio, and frees the slug", async () => {
+    const email = uniqueEmail();
+    const reg = await request(app).post("/api/auth/register").send({ name: "Ada", email, password: "letmein1" });
+    const token = reg.body.token;
+
+    await request(app)
+      .put("/api/portfolios/mine")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ data: { profile: { name: "Ada" } }, slug: "ada-to-delete", visibility: "public" });
+    expect((await request(app).get("/api/portfolios/by-slug/ada-to-delete")).status).toBe(200);
+
+    const del = await request(app).delete("/api/auth/me").set("Authorization", `Bearer ${token}`).send({ password: "letmein1" });
+    expect(del.status).toBe(204);
+
+    // login no longer works, token is dead, and the published link is gone
+    expect((await request(app).post("/api/auth/login").send({ email, password: "letmein1" })).status).toBe(401);
+    expect((await request(app).get("/api/auth/me").set("Authorization", `Bearer ${token}`)).status).toBe(401);
+    expect((await request(app).get("/api/portfolios/by-slug/ada-to-delete")).status).toBe(404);
+  });
+
+  it("frees the email so it can be registered again", async () => {
+    const email = uniqueEmail();
+    const reg = await request(app).post("/api/auth/register").send({ name: "Ada", email, password: "letmein1" });
+    await request(app).delete("/api/auth/me").set("Authorization", `Bearer ${reg.body.token}`).send({ password: "letmein1" });
+    const again = await request(app).post("/api/auth/register").send({ name: "Ada Again", email, password: "letmein2" });
+    expect(again.status).toBe(201);
+  });
+});
+
 describe("Email verification", () => {
   beforeEach(() => {
     vi.spyOn(console, "log").mockImplementation(() => {});

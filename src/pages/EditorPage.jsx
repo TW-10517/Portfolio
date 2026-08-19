@@ -6,6 +6,7 @@ import { downloadJson, readJsonFile } from "../utils/exportImport.js";
 import { api } from "../utils/api.js";
 import { Button } from "../components/ui/Button.jsx";
 import { ShareModal } from "../components/share/ShareModal.jsx";
+import { AccountModal } from "../components/auth/AccountModal.jsx";
 import { PreviewPane } from "../components/editor/PreviewPane.jsx";
 import { TabProfile } from "../components/editor/TabProfile.jsx";
 import { TabAbout } from "../components/editor/TabAbout.jsx";
@@ -43,6 +44,7 @@ export function EditorPage() {
   const [verifyBannerDismissed, setVerifyBannerDismissed] = useState(false);
   const [resendNote, setResendNote] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [editorWidth, setEditorWidth] = useState(() => Number(localStorage.getItem(WIDTH_KEY)) || 440);
   const [dragging, setDragging] = useState(false);
   const [isDesktop, setIsDesktop] = useState(() => window.innerWidth >= 768);
@@ -163,7 +165,20 @@ export function EditorPage() {
             Share ↗
           </Button>
           <div className="flex items-center gap-2 pl-3 border-l border-slate-800">
-            <span className="hidden sm:inline text-xs text-slate-400">{user?.name}</span>
+            <button
+              onClick={() => setAccountOpen(true)}
+              title={`Signed in as ${user?.email || ""} — account settings`}
+              className="flex items-center gap-2 rounded-full pl-1 pr-2.5 py-1 hover:bg-slate-800/70 transition group"
+            >
+              <span className="w-6 h-6 shrink-0 rounded-full bg-gradient-to-r from-cyan-400 to-violet-500 text-slate-950 text-[11px] font-bold flex items-center justify-center">
+                {(user?.name || "?").slice(0, 1).toUpperCase()}
+              </span>
+              <span className="hidden sm:flex flex-col items-start leading-tight">
+                <span className="text-xs text-slate-300 group-hover:text-white">{user?.name}</span>
+                <span className="text-[10px] text-slate-500 max-w-[160px] truncate">{user?.email}</span>
+              </span>
+              {user && !user.emailVerified && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" title="Email not verified" />}
+            </button>
             <button
               onClick={() => {
                 logout();
@@ -272,6 +287,7 @@ export function EditorPage() {
       </div>
 
       <ShareModal open={shareOpen} onClose={() => setShareOpen(false)} />
+      <AccountModal open={accountOpen} onClose={() => setAccountOpen(false)} />
     </div>
   );
 }

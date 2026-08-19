@@ -125,6 +125,26 @@ authRouter.post("/reset-password", tokenLimiter, async (req, res) => {
   res.json({ message: "Password updated. You can now log in with your new password." });
 });
 
+// Permanently deletes the account and everything attached to it. Requires
+// the current password, since this is irreversible and a hijacked session
+// shouldn't be able to destroy someone's data. The portfolios row goes with
+// it via ON DELETE CASCADE, which also frees up the slug.
+authRouter.delete("/me", requireAuth, async (req, res) => {
+  const { password } = req.body || {};
+  const row = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.sub);
+  if (!row) return res.status(404).json({ error: "User not found." });
+
+  const valid = !!password && (await verifyPassword(password, row.password_hash));
+  if (!valid) return res.status(401).json({ errors: { password: "Incorrect password." } });
+
+  // SQLite only enforces ON DELETE CASCADE when foreign keys are switched on
+  // (it's off by default per-connection), so delete the child row explicitly
+  // rather than relying on it and silently orphaning portfolios.
+  db.prepare("DELETE FROM portfolios WHERE user_id = ?").run(row.id);
+  db.prepare("DELETE FROM users WHERE id = ?").run(row.id);
+  res.status(204).end();
+});
+
 // Changing your password while signed in. Requires the current password
 // (so a hijacked session can't lock the real owner out) and, like a reset,
 // invalidates every previously-issued token — including the one used to
