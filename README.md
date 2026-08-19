@@ -2,7 +2,7 @@
 
 A no-code portfolio builder: an **Editor** (10 tabs of structured content + theme controls), a **Live Preview** that updates instantly with a device-size toggle and a **Preview as Visitor** button, and a **Share** flow that publishes a snapshot to a shareable link with a QR code, visibility controls, and password protection.
 
-This is the MVP variant described in the brief — React SPA, no backend, no accounts. All data lives in your browser's `localStorage`.
+This started as a no-backend MVP (React SPA, `localStorage` only) and now has a **real local backend** (`server/`: Express + SQLite) providing accounts and a `portfolios` table — see "Accounts & backend" below. The Editor/Share UI itself still runs on `localStorage` as described in this README; wiring it to save/publish through the new backend (instead of the old localStorage-only publish flow) is the next step, not yet done.
 
 > **`legacy-static/`** holds an earlier, separate deliverable: a hand-built 9-page static HTML/CSS/JS portfolio (no editor, hardcoded content). It's kept here for reference only — it doesn't share any code with the app in `src/` and isn't part of the Vite build. Open `legacy-static/index.html` directly in a browser to view it.
 
@@ -13,12 +13,29 @@ npm install
 npm run dev
 ```
 
-Open the printed local URL — it redirects to `#/editor`.
+Open the printed local URL. `/editor` now requires logging in — you'll be redirected to `/register` to create an account first (see "Accounts & backend" below for what running the backend requires).
 
 ```bash
-npm run build     # production build to dist/
-npm run preview   # serve the production build locally
+npm run dev:all    # runs the Vite frontend AND the Express+SQLite backend together
+npm run dev         # frontend only
+npm run dev:server  # backend only (http://localhost:4000)
+npm run build        # production build to dist/
+npm run preview       # serve the production build locally
 ```
+
+## Accounts & backend
+
+`server/` is a small Express API with a SQLite database (`server/data.sqlite`, auto-created, gitignored) providing:
+
+- `POST /api/auth/register` / `POST /api/auth/login` — bcrypt-hashed passwords, JWT session tokens (30-day expiry). Validation rules (enforced both client-side in `LoginPage.jsx`/`RegisterPage.jsx` for instant feedback, and server-side in `server/auth.js` as the source of truth): name required, valid email format, password ≥8 characters with at least one letter and one number, duplicate emails rejected.
+- `GET /api/auth/me` — returns the logged-in user for a valid token.
+- `GET/PUT /api/portfolios/mine` (auth required) and `GET /api/portfolios/by-slug/:slug` + `POST /api/portfolios/by-slug/:slug/unlock` (public) — a real `portfolios` table keyed by user, with slug-based lookup and server-side password gating (the password is never sent to the client for protected portfolios — only after a correct `/unlock` call).
+
+The frontend's `useAuthStore.js` persists the JWT to `localStorage` and `/editor` is wrapped in `RequireAuth` (`src/components/auth/RequireAuth.jsx`), so an unauthenticated visit redirects to `/login`.
+
+**Not wired up yet:** the Editor's Save/Export and the Share modal's Publish still operate the same way described in "How data flows" below (pure `localStorage`, no network calls) — they don't yet call the `/api/portfolios/*` routes above. That's the natural next step once you're ready (it would also finally fix the cross-device share-link limitation noted below, since a link could point at a real database row instead of local-only data).
+
+**Moving to a hosted database:** `server/db.js` currently opens `better-sqlite3` against a local file path from `DATABASE_URL` (or `server/data.sqlite` by default) — it does not speak Postgres. To deploy against a free hosted database (e.g. Supabase), swap `better-sqlite3` for a Postgres client (e.g. `pg` or `postgres.js`) and update the `CREATE TABLE`/query syntax in `server/db.js` and `server/routes/*.js` accordingly (SQLite and Postgres SQL differ slightly — e.g. `AUTOINCREMENT` vs `SERIAL`). `JWT_SECRET` must also be set to a real secret in production — see `.env.example`.
 
 ## Routes
 
@@ -66,18 +83,28 @@ Image fields accept a pasted URL or a local file upload (stored as a data URL �
 ## Project structure
 
 ```
+server/
+  index.js           Express app entrypoint (CORS, JSON body parsing, mounts routers)
+  db.js                 SQLite connection + schema (users, portfolios tables)
+  auth.js               Password hashing, JWT signing/verification, validation rules, requireAuth middleware
+  routes/
+    auth.js               /api/auth/register, /login, /me
+    portfolio.js          /api/portfolios/mine (auth), /by-slug/:slug + /unlock (public)
 src/
   components/
-    editor/       Tab* components, PreviewPane, TabShell
-    portfolio/     Rendered sections (Hero, About, Skills, Projects, ...) + ThemeContext
-    share/          ShareModal, PasswordGate
-    ui/               Reusable inputs: Field, Button, Modal, Toggle, TagInput, ReorderList, ImageUpload, ColorPicker
-  data/defaults.js  Default seeded portfolio content (persona used for placeholders)
-  hooks/               useTyping, useActiveSection, useTheme, useScrolledState
-  pages/               EditorPage, PreviewPage, SharePage
-  store/               usePortfolioStore.js (Zustand + localStorage persistence, publish/unpublish)
-  utils/                 uid, slug, exportImport
-legacy-static/          Earlier standalone static-HTML portfolio (reference only, not built by Vite)
+    auth/            RequireAuth (route guard)
+    editor/         Tab* components, PreviewPane, TabShell
+    portfolio/       Rendered sections (Hero, About, Skills, Projects, ...) + ThemeContext
+    share/            ShareModal, PasswordGate
+    ui/                 Reusable inputs: Field, Button, Modal, Toggle, TagInput, ReorderList, ImageUpload, ColorPicker
+  data/defaults.js    Default seeded portfolio content (persona used for placeholders)
+  hooks/                 useTyping, useActiveSection, useTheme, useScrolledState
+  pages/                 EditorPage, PreviewPage, SharePage, LoginPage, RegisterPage
+  store/
+    usePortfolioStore.js   Zustand + localStorage persistence for the portfolio draft, publish/unpublish
+    useAuthStore.js          Zustand + localStorage persistence for the JWT/user session
+  utils/                   uid, slug, exportImport, api.js (fetch wrapper for the backend)
+legacy-static/            Earlier standalone static-HTML portfolio (reference only, not built by Vite)
 ```
 
 ## Deploying

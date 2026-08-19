@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { usePortfolioStore } from "../store/usePortfolioStore.js";
+import { useAuthStore } from "../store/useAuthStore.js";
 import { downloadJson, readJsonFile } from "../utils/exportImport.js";
 import { Button } from "../components/ui/Button.jsx";
 import { ShareModal } from "../components/share/ShareModal.jsx";
@@ -44,6 +46,9 @@ export function EditorPage() {
   const setAll = usePortfolioStore((s) => s.setAll);
   const resetToDefaults = usePortfolioStore((s) => s.resetToDefaults);
   const lastSavedAt = usePortfolioStore((s) => s.lastSavedAt);
+  const user = useAuthStore((s) => s.user);
+  const logout = useAuthStore((s) => s.logout);
+  const navigate = useNavigate();
 
   const ActiveTab = TABS.find((t) => t[0] === tab)[2];
 
@@ -127,6 +132,18 @@ export function EditorPage() {
           <Button size="sm" onClick={() => setShareOpen(true)}>
             Share ↗
           </Button>
+          <div className="flex items-center gap-2 pl-3 border-l border-slate-800">
+            <span className="hidden sm:inline text-xs text-slate-400">{user?.name}</span>
+            <button
+              onClick={() => {
+                logout();
+                navigate("/login");
+              }}
+              className="text-xs text-slate-400 hover:text-red-400"
+            >
+              Log out
+            </button>
+          </div>
         </div>
       </header>
 

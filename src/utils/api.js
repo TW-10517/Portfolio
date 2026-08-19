@@ -1,0 +1,51 @@
+export const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:4000/api";
+
+export class ApiError extends Error {
+  constructor(message, status, fieldErrors) {
+    super(message);
+    this.status = status;
+    this.fieldErrors = fieldErrors || {};
+  }
+}
+
+async function request(path, { method = "GET", body, token } = {}) {
+  const headers = { "Content-Type": "application/json" };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new ApiError("Can't reach the server. Is it running?", 0);
+  }
+
+  let json = null;
+  try {
+    json = await res.json();
+  } catch {
+    // empty/non-JSON body is fine for some responses
+  }
+
+  if (!res.ok) {
+    const message = json?.error || json?.errors?.form || "Something went wrong.";
+    throw new ApiError(message, res.status, json?.errors);
+  }
+  return json;
+}
+
+export const api = {
+  register: (data) => request("/auth/register", { method: "POST", body: data }),
+  login: (data) => request("/auth/login", { method: "POST", body: data }),
+  me: (token) => request("/auth/me", { token }),
+
+  getMine: (token) => request("/portfolios/mine", { token }),
+  saveMine: (token, body) => request("/portfolios/mine", { method: "PUT", body, token }),
+
+  getBySlug: (slug) => request(`/portfolios/by-slug/${encodeURIComponent(slug)}`),
+  unlockBySlug: (slug, password) =>
+    request(`/portfolios/by-slug/${encodeURIComponent(slug)}/unlock`, { method: "POST", body: { password } }),
+};
