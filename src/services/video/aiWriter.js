@@ -1,5 +1,6 @@
 import { LocalProvider } from "../ai/LocalProvider.js";
 import { secondsForWords } from "./sceneBuilder.js";
+import { countSpokenWords } from "../../utils/textMetrics.js";
 
 const localProvider = new LocalProvider();
 
@@ -7,8 +8,7 @@ const localProvider = new LocalProvider();
 // spoken at `rate`, plus a beat of breathing room so the voice isn't clipped
 // by the scene change.
 export function durationForText(text, rate = 1) {
-  const wordCount = (text || "").trim().split(/\s+/).filter(Boolean).length;
-  return Math.max(4, Math.round(secondsForWords(wordCount, rate)) + 1);
+  return Math.max(4, Math.round(secondsForWords(countSpokenWords(text), rate)) + 1);
 }
 
 // Re-times an already-written plan for a new speech rate. Changing the Speed
@@ -17,6 +17,21 @@ export function durationForText(text, rate = 1) {
 export function retimeScenePlan(scenePlan, rate = 1) {
   const scenes = scenePlan.scenes.map((scene) => ({ ...scene, duration: durationForText(scene.text, rate) }));
   return { ...scenePlan, scenes, totalSeconds: scenes.reduce((sum, s) => sum + s.duration, 0) };
+}
+
+// One retry before giving up on the model. The guards reject a scene when the
+// model invents a fact or answers in the wrong language, and both are things a
+// model often gets right on a second attempt — whereas falling straight back
+// to the offline writer drops an English sentence into the middle of, say, a
+// Japanese video. Only after a second failure is the deterministic writer used.
+async function writeWithRetry(provider, scene, writeOptions, signal) {
+  const options = { ...writeOptions, maxWords: scene.maxWords, signal };
+  try {
+    return await provider.writeScript(scene.brief, scene.type, options);
+  } catch (e) {
+    if (e?.name === "AbortError") throw e;
+    return provider.writeScript(scene.brief, scene.type, options);
+  }
 }
 
 // Writes narration for every scene in a plan using `provider`, falling back
@@ -38,7 +53,7 @@ export async function writeNarration(scenePlan, provider, options = {}) {
     let text;
     let usedProviderName = provider.name;
     try {
-      text = await provider.writeScript(scene.brief, scene.type, { ...writeOptions, maxWords: scene.maxWords, signal });
+      text = await writeWithRetry(provider, scene, writeOptions, signal);
     } catch (e) {
       if (e?.name === "AbortError") throw e;
       text = await localProvider.writeScript(scene.brief, scene.type, { ...writeOptions, maxWords: scene.maxWords });

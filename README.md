@@ -85,7 +85,7 @@ Selected automatically in this order, and swappable in the tab. **Nothing here e
 | Provider | Setup | Notes |
 |---|---|---|
 | **Ollama** (preferred) | Run Ollama locally; the tab lists your installed models | A genuine LLM that costs nothing, needs no account, and never sends your portfolio off the machine |
-| **Gemini** | Paste your own API key (stored in `localStorage`) | Optional cloud fallback. Never called unless you supply a key. Currently the only provider that writes non-English narration |
+| **Gemini** | Paste your own API key (stored in `localStorage`) | Optional cloud fallback. Never called unless you supply a key, and ignored entirely while a local model is selected |
 | **Basic (offline)** | Always available | Deterministic template writer — instant, no network, no key. Also the per-scene fallback whenever a model errors out |
 
 ### The grounding guard
@@ -96,7 +96,7 @@ The check is deliberately narrow — it flags proper nouns and digits (companies
 
 ### Export
 
-`recordScenePlan()` prefers **MP4 (H.264 + AAC)** since that's what editors, phones, and upload forms accept without conversion, falling back through WebM variants based on what the browser's `MediaRecorder` supports; the download filename always matches what was actually recorded. Narration audio is included if the browser supports tab-audio capture via `getDisplayMedia` and you grant permission — if not, the export still succeeds without an audio track, and the burned-in captions still carry the script.
+`recordScenePlan()` prefers **MP4 (H.264 + AAC)** since that's what editors, phones, and upload forms accept without conversion, falling back through WebM variants based on what the browser's `MediaRecorder` supports; the download filename always matches what was actually recorded. Narration audio is captured via `getDisplayMedia` if you grant it. Note that the voice comes from the *operating system's* speech engine rather than the page, so sharing a single tab usually captures silence — pick "Entire Screen" with "Share system audio". The export measures the captured track's actual signal level and tells you which of the three outcomes happened (audio, silence, or no track), instead of claiming success because a track existed. Either way the export succeeds and the burned-in captions carry the script.
 
 ## Editor/Preview split
 
@@ -187,5 +187,6 @@ The frontend is a static build (`npm run build` → `dist/`) — deploy to Netli
 - **No email delivery.** Reset and verification links go to the API server's console. Wire a provider into `deliverLink()` in `server/routes/auth.js`.
 - **SQLite only.** `server/db.js` doesn't speak Postgres — see "Moving to a hosted database" above.
 - **No server-rendered SEO** for share pages. The app is a hash-routed SPA, so `#/p/:slug` won't produce link previews or index well; that needs the SSR path (e.g. Next.js) from the original spec.
-- **Non-English AI narration requires a Gemini key.** The offline writer only produces English phrasing, and the tab warns you when your language choice can't be honoured by the active provider.
-- **Video export depends on browser support.** `MediaRecorder` MP4 muxing and `getDisplayMedia` tab-audio capture vary by browser; the export degrades to WebM and/or silent video rather than failing.
+- **Non-English narration needs a real model, and its quality is the model's.** The offline template writer is English-only; any LLM (local or cloud) can write the other languages, and the tab says so when the active writer can't. Capability varies sharply by model — `qwen2.5:3b` handles Japanese well and Tamil poorly — so a scene the model can't write in the chosen language is rejected and falls back to English rather than shipping nonsense.
+- **On-screen text stays in the portfolio's own language.** Only the narration and captions are translated; names, roles, and skill chips are rendered from your portfolio fields verbatim.
+- **Video export depends on browser support.** `MediaRecorder` MP4 muxing and `getDisplayMedia` audio capture vary by browser; the export degrades to WebM and/or silent video rather than failing.

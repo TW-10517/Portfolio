@@ -3,6 +3,8 @@
 // the user's own profile/project images are used as a bonus when they load
 // cleanly, and silently skipped otherwise rather than breaking the scene.
 
+import { tokenizeForWrap, joinTokens } from "../../utils/textMetrics.js";
+
 const imageCache = new Map();
 
 function loadImage(src) {
@@ -19,18 +21,6 @@ function loadImage(src) {
   return promise;
 }
 
-export function preloadSceneImages(scenes, data) {
-  const urls = new Set();
-  if (data.profile?.photo) urls.add(data.profile.photo);
-  scenes.forEach((s) => {
-    if (s.type === "project" && s.projectId) {
-      const project = data.projects.find((p) => p.id === s.projectId);
-      if (project?.images?.[0]) urls.add(project.images[0]);
-    }
-  });
-  return Promise.all([...urls].map(loadImage));
-}
-
 function ease(t) {
   return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 }
@@ -43,19 +33,21 @@ function sceneAlpha(t) {
 }
 
 function wrapText(ctx, text, x, y, maxWidth, lineHeight, align = "left") {
-  const words = (text || "").split(/\s+/);
-  let line = "";
+  // Tokenised rather than split on spaces: Japanese has no spaces, so a
+  // whitespace split yields one unbreakable token that overflows the canvas.
+  const tokens = tokenizeForWrap(text);
+  let current = [];
   const lines = [];
-  for (const word of words) {
-    const test = line ? `${line} ${word}` : word;
-    if (ctx.measureText(test).width > maxWidth && line) {
-      lines.push(line);
-      line = word;
+  for (const token of tokens) {
+    const test = joinTokens([...current, token]);
+    if (ctx.measureText(test).width > maxWidth && current.length) {
+      lines.push(joinTokens(current));
+      current = [token];
     } else {
-      line = test;
+      current.push(token);
     }
   }
-  if (line) lines.push(line);
+  if (current.length) lines.push(joinTokens(current));
   lines.forEach((l, i) => {
     const drawX = align === "center" ? x : x;
     ctx.textAlign = align;

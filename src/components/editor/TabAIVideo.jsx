@@ -22,7 +22,19 @@ import { recordScenePlan, downloadBlob, pickSupportedMimeType, fileExtensionForM
 import { drawScene, buildImageBundle } from "../../services/video/sceneRenderer.js";
 import { formatTimestamp } from "../../services/video/captions.js";
 
-const LANGUAGES = ["English", "Japanese", "Hindi", "Tamil"];
+// BCP-47 prefixes are what speechSynthesis tags its voices with, so the
+// narration language has to map to one or the video is read aloud by an
+// English voice mangling Japanese text.
+const LANGUAGES = [
+  { label: "English", code: "en" },
+  { label: "Japanese", code: "ja" },
+  { label: "Tamil", code: "ta" },
+];
+
+function voicesForLanguage(voices, label) {
+  const code = LANGUAGES.find((l) => l.label === label)?.code || "en";
+  return voices.filter((v) => (v.lang || "").toLowerCase().startsWith(code));
+}
 const SECTION_LABELS = {
   about: "About",
   skills: "Skills",
@@ -207,7 +219,11 @@ export function TabAIVideo() {
   }, []);
 
   const providerName = getAIProvider("auto").name;
-  const languageWarning = config.language !== "English" && providerName !== "Gemini";
+  // The offline template writer only knows English phrasing; a real model
+  // (local or cloud) can write the other languages.
+  const languageWarning = config.language !== "English" && providerName === "Basic (offline)";
+  const matchingVoices = voicesForLanguage(voices, config.language);
+  const missingVoice = config.language !== "English" && voices.length > 0 && matchingVoices.length === 0;
 
   const toggleSection = (key) => {
     setConfig((c) => ({
@@ -342,7 +358,10 @@ export function TabAIVideo() {
     setScenePlan((plan) => (plan.scenes.length <= 1 ? plan : { ...plan, scenes: plan.scenes.filter((s) => s.id !== sceneId) }));
   };
 
-  const selectedVoice = voices.find((v) => v.voiceURI === config.voiceURI) || null;
+  // An explicit choice wins; otherwise pick a voice that actually speaks the
+  // chosen language rather than letting the system default read Japanese
+  // text with an English voice.
+  const selectedVoice = voices.find((v) => v.voiceURI === config.voiceURI) || matchingVoices[0] || null;
 
   // Guards against a real race: seeking mid-playback aborts the current
   // attempt and immediately starts a new one. The old attempt's cleanup is
@@ -599,8 +618,16 @@ export function TabAIVideo() {
             <span className="text-xs text-slate-500 tabular-nums shrink-0">
               {formatTimestamp(currentSeconds)} / {formatTimestamp(scenePlan?.totalSeconds || 0)}
             </span>
-            <Button size="sm" onClick={handleExport} disabled={exporting || isPlaying || !scenePlan} className="shrink-0">
-              {exporting ? `${exportProgress ? `${exportProgress.index}/${exportProgress.total}` : "…"}` : `⬇ ${exportContainer}`}
+            <Button
+              size="sm"
+              onClick={handleExport}
+              disabled={exporting || isPlaying || !scenePlan}
+              className="shrink-0"
+              title={`Download this video as a .${exportExtension} file`}
+            >
+              {exporting
+                ? `Exporting… ${exportProgress ? `${exportProgress.index}/${exportProgress.total}` : ""}`
+                : `⬇ Export ${exportContainer}`}
             </Button>
           </div>
 
@@ -639,14 +666,26 @@ export function TabAIVideo() {
                   <label className="block text-xs font-medium text-slate-400 mb-1.5">Language</label>
                   <Select value={config.language} onChange={(e) => setConfig((c) => ({ ...c, language: e.target.value }))}>
                     {LANGUAGES.map((l) => (
-                      <option key={l} value={l}>{l}</option>
+                      <option key={l.code} value={l.label}>{l.label}</option>
                     ))}
                   </Select>
                 </div>
               </div>
               {languageWarning && (
                 <p className="text-[11px] text-amber-400 mt-2">
-                  Narration will stay in English — add a Gemini API key below to write scripts in {config.language}.
+                  The built-in offline writer only speaks English. Run a local model (see advanced below) to write scripts in {config.language}.
+                </p>
+              )}
+              {config.language !== "English" && providerName.startsWith("Ollama") && (
+                <p className="text-[11px] text-slate-500 mt-2">
+                  Non-English quality depends on the model — smaller ones handle Japanese far better than Tamil. Any scene the model can't write in{" "}
+                  {config.language} falls back to English rather than shipping nonsense.
+                </p>
+              )}
+              {missingVoice && (
+                <p className="text-[11px] text-amber-400 mt-2">
+                  No {config.language} voice is installed in this browser, so narration will be silent or mispronounced. Captions still work, and
+                  the exported video is unaffected apart from the voice.
                 </p>
               )}
             </Card>

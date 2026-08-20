@@ -1,3 +1,4 @@
+import { splitSentences } from "../../utils/textMetrics.js";
 // Enforcement for the project's hard rule: the AI may rephrase the user's
 // portfolio, never add to it. A prompt instruction is not enough — small
 // local models in particular will happily turn an empty location field into
@@ -25,10 +26,6 @@ function collectBriefText(value, out = []) {
 
 function tightenSeparators(value) {
   return value.replace(/\s*([/.-])\s*/g, "$1");
-}
-
-function splitSentences(text) {
-  return text.split(/(?<=[.!?])\s+/).filter(Boolean);
 }
 
 // Returns the list of facts in `text` that the brief does not support.
@@ -109,4 +106,31 @@ export function pruneEmpty(value) {
     return trimmed === "" ? undefined : trimmed;
   }
   return value == null ? undefined : value;
+}
+
+// Scripts each language is actually written in. A model that quietly ignores
+// the language instruction (common for languages it barely knows) would
+// otherwise produce an English or romanised script for a video the user asked
+// to be in Japanese, and nothing downstream would notice.
+const LANGUAGE_SCRIPTS = {
+  Japanese: /[぀-ヿ一-鿿]/,
+  Tamil: /[஀-௿]/,
+  Chinese: /[一-鿿]/,
+  Korean: /[가-힯]/,
+  Hindi: /[ऀ-ॿ]/,
+};
+
+export function isInExpectedScript(text, language) {
+  const script = LANGUAGE_SCRIPTS[language];
+  if (!script) return true; // English and anything Latin-scripted
+  return script.test(text || "");
+}
+
+// Throws so the caller falls back rather than shipping a scene in the wrong
+// language.
+export function assertLanguage(text, language) {
+  if (!isInExpectedScript(text, language)) {
+    throw new Error(`Model did not write in ${language}. Try a model with stronger ${language} support.`);
+  }
+  return text;
 }

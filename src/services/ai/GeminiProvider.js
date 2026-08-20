@@ -1,5 +1,5 @@
 import { AIProvider } from "./AIProvider.js";
-import { assertGrounded, pruneEmpty } from "./factGuard.js";
+import { assertGrounded, assertLanguage, pruneEmpty } from "./factGuard.js";
 
 const MODEL = "gemini-2.0-flash";
 const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
@@ -54,6 +54,7 @@ export class GeminiProvider extends AIProvider {
     if (!text.trim()) throw new Error("AI generation returned an empty script.");
     // Same grounding guard as the local model — a cloud model is no more
     // entitled to invent the user's career than a local one.
+    assertLanguage(text.trim(), options.language);
     return assertGrounded(text.trim(), brief);
   }
 }

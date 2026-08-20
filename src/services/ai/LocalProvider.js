@@ -1,4 +1,5 @@
 import { AIProvider } from "./AIProvider.js";
+import { countSpokenWords, splitSentences } from "../../utils/textMetrics.js";
 
 // Zero-cost, zero-setup script writer. Runs entirely in the browser with no
 // network call and no API key, so the AI Video feature always works even if
@@ -23,14 +24,15 @@ export class LocalProvider extends AIProvider {
 // clause boundary, and only as a last resort a hard word slice.
 export function capWords(text, maxWords) {
   if (!maxWords) return text;
-  const words = text.split(/\s+/).filter(Boolean);
-  if (words.length <= maxWords) return text;
+  // Measured in spoken-word equivalents so the budget means the same amount
+  // of speaking time in Japanese as it does in English.
+  if (countSpokenWords(text) <= maxWords) return text;
 
-  const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
+  const sentences = splitSentences(text);
   const kept = [];
   let used = 0;
   for (const sentence of sentences) {
-    const count = sentence.split(/\s+/).filter(Boolean).length;
+    const count = countSpokenWords(sentence);
     if (used + count > maxWords) break;
     kept.push(sentence);
     used += count;
@@ -41,15 +43,14 @@ export function capWords(text, maxWords) {
 
   // No whole sentence fits — cut at the last clause break instead, so the
   // line ends somewhere a reader (and a voice) can breathe.
-  const slice = words.slice(0, maxWords).join(" ");
+  const slice = text.split(/\s+/).filter(Boolean).slice(0, Math.ceil(maxWords)).join(" ");
   const clauseEnd = Math.max(slice.lastIndexOf(", "), slice.lastIndexOf("; "), slice.lastIndexOf(" — "));
   const base = clauseEnd > slice.length * 0.5 ? slice.slice(0, clauseEnd) : slice;
   return base.replace(/[,;:\s—-]+$/, "") + ".";
 }
 
 function firstSentences(text, count = 2) {
-  const sentences = (text || "").split(/(?<=[.!?])\s+/).filter(Boolean);
-  return sentences.slice(0, count).join(" ");
+  return splitSentences(text).slice(0, count).join(" ");
 }
 
 function joinList(items, max = 4) {

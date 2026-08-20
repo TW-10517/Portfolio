@@ -1,8 +1,12 @@
 import { AIProvider } from "./AIProvider.js";
 import { capWords } from "./LocalProvider.js";
-import { assertGrounded, pruneEmpty } from "./factGuard.js";
+import { assertGrounded, assertLanguage, pruneEmpty } from "./factGuard.js";
+import { charsForWords } from "../../utils/textMetrics.js";
 
 export const DEFAULT_OLLAMA_URL = "http://localhost:11434";
+
+// Languages written without spaces between words.
+const SPACELESS_LANGUAGES = new Set(["Japanese", "Chinese", "Korean"]);
 
 // A real LLM that runs on the user's own machine via Ollama. No API key, no
 // account, no cloud call, no quota — the request never leaves localhost — so
@@ -64,6 +68,7 @@ export class OllamaProvider extends AIProvider {
     // caller falls back to the offline writer for this scene, which can only
     // ever restate real fields.
     assertGrounded(text, brief);
+    assertLanguage(text, options.language);
     // Small local models routinely overshoot a word budget, and scene timing
     // is derived from word count, so enforce the cap here rather than
     // trusting the model to have obeyed it.
@@ -96,8 +101,12 @@ function buildPrompt(brief, sceneType, options) {
     `- Output ONLY the narration itself. No preamble, no explanation, no labels, no markdown, no surrounding quotes.`,
     `- Use ONLY the facts in the JSON below. Never invent companies, job titles, numbers, dates, places, skills, or achievements. If something isn't listed, don't mention it.`,
     `- Do not add descriptive claims (industries, specialisms, locations, seniority) that aren't stated in the facts. If the facts are sparse, write a shorter line rather than padding it.`,
-    `- Write it to be spoken aloud, in the first person, at most ${maxWords} words.`,
-    `- Write in ${language}.`,
+    // "at most 30 words" is not an instruction a model can follow in a
+    // language that isn't written in words, so give those a character budget.
+    SPACELESS_LANGUAGES.has(language)
+      ? `- Write it to be spoken aloud, in the first person, at most ${charsForWords(maxWords)} characters.`
+      : `- Write it to be spoken aloud, in the first person, at most ${maxWords} words.`,
+    `- Write in ${language}. Every word of the output must be in ${language}.`,
     `- Style: ${style}. Audience: ${audience}.`,
     customInstruction ? `- Extra direction from the user: ${customInstruction}` : "",
     ``,

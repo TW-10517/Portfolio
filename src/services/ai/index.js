@@ -28,11 +28,6 @@ export function getOllamaUrl() {
   return localStorage.getItem(OLLAMA_URL_KEY) || DEFAULT_OLLAMA_URL;
 }
 
-export function setOllamaUrl(url) {
-  if (url && url !== DEFAULT_OLLAMA_URL) localStorage.setItem(OLLAMA_URL_KEY, url);
-  else localStorage.removeItem(OLLAMA_URL_KEY);
-}
-
 // "auto" prefers a real LLM running on the user's own machine (Ollama), then
 // a user-supplied cloud key, then the always-available offline template
 // writer. Ollama comes first deliberately: it's a genuine LLM that costs
