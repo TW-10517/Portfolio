@@ -32,3 +32,49 @@ describe("LocalProvider", () => {
     expect(recruiterText.toLowerCase()).toContain("open to new roles");
   });
 });
+
+describe("style actually changes the wording", () => {
+  const provider = new LocalProvider();
+  const STYLES = ["professional", "creative", "minimal", "storytelling"];
+
+  // Guards the bug this replaced: `style` used to swap only the intro's first
+  // two words, and `tone` only decided whether the intro ended in "!", so
+  // every other scene read identically no matter what the user picked.
+  const cases = [
+    ["intro", { name: "Ada Lovelace", roles: "Engineer", tagline: "Building things." }],
+    ["skills", { topSkills: ["Python", "React", "SQL"], learning: ["Rust"] }],
+    ["experience", { items: [{ company: "Acme", role: "Engineer", duration: "2020–2023", description: "Led the platform team." }] }],
+    ["project", { name: "Atlas", shortDesc: "A mapping tool.", tech: ["React"], metrics: "" }],
+    ["education", { degrees: [{ degree: "BSc", institution: "MIT", year: "2019" }], certifications: [] }],
+    ["achievements", { awards: [{ name: "Best Paper", issuer: "ACM", year: "2022" }] }],
+  ];
+
+  it.each(cases)("produces a distinct phrasing per style for %s", async (sceneType, brief) => {
+    const outputs = await Promise.all(STYLES.map((style) => provider.writeScript(brief, sceneType, { style })));
+    expect(new Set(outputs).size).toBe(STYLES.length);
+  });
+
+  it("keeps the underlying facts identical across styles", async () => {
+    const brief = { topSkills: ["Python", "React", "SQL"], learning: [] };
+    for (const style of STYLES) {
+      const text = await provider.writeScript(brief, "skills", { style });
+      expect(text).toContain("Python");
+      expect(text).toContain("React");
+      expect(text).toContain("SQL");
+    }
+  });
+
+  it("falls back to professional phrasing for an unknown style", async () => {
+    const brief = { name: "Ada", roles: "Engineer" };
+    const unknown = await provider.writeScript(brief, "intro", { style: "not-a-real-style" });
+    const professional = await provider.writeScript(brief, "intro", { style: "professional" });
+    expect(unknown).toBe(professional);
+  });
+
+  it("no longer accepts a tone option that changes anything", async () => {
+    const brief = { name: "Ada", roles: "Engineer" };
+    const a = await provider.writeScript(brief, "intro", { style: "professional", tone: "energetic" });
+    const b = await provider.writeScript(brief, "intro", { style: "professional", tone: "calm" });
+    expect(a).toBe(b);
+  });
+});

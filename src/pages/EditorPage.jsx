@@ -96,8 +96,19 @@ export function EditorPage() {
     setDragging(true);
   }, []);
 
+  // The pane width is a pixel value persisted across sessions, so it can easily
+  // outlive the window it was dragged in. Re-clamp it here (and once on mount,
+  // for whatever localStorage handed us) or the pane keeps a width wider than
+  // the split container, shoves the preview off-screen, and clips its own
+  // content on the right.
   useEffect(() => {
-    const onResize = () => setIsDesktop(window.innerWidth >= 768);
+    const onResize = () => {
+      setIsDesktop(window.innerWidth >= 768);
+      const containerWidth = splitRef.current?.getBoundingClientRect().width ?? window.innerWidth;
+      const max = Math.max(containerWidth - MIN_PREVIEW_WIDTH, MIN_EDITOR_WIDTH);
+      setEditorWidth((w) => Math.min(Math.max(w, MIN_EDITOR_WIDTH), max));
+    };
+    onResize();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
@@ -263,10 +274,12 @@ export function EditorPage() {
         ) : (
           <>
             <div
-              className={`w-full shrink-0 border-r border-slate-800 flex ${mobileView === "preview" ? "hidden md:flex" : "flex"}`}
+              className={`w-full min-w-0 max-w-full shrink-0 border-r border-slate-800 flex ${
+                mobileView === "preview" ? "hidden md:flex" : "flex"
+              }`}
               style={isDesktop ? { width: editorWidth } : undefined}
             >
-              <div className="flex-1 overflow-y-auto px-5 py-6">
+              <div className="flex-1 min-w-0 overflow-y-auto px-5 py-6">
                 <ActiveTab />
               </div>
             </div>

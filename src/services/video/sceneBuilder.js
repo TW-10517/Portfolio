@@ -45,8 +45,13 @@ export function wordsForSeconds(seconds) {
   return Math.max(6, Math.round(seconds * WORDS_PER_SECOND));
 }
 
-export function secondsForWords(words) {
-  return words / WORDS_PER_SECOND;
+// `rate` is the SpeechSynthesis playback rate the narration will actually be
+// spoken at (0.8 = Slow, 1.2 = Fast). Leaving it out of this calculation is
+// what made the Slow setting cut narration off mid-sentence — the voice took
+// 25% longer while the scene kept its original length — and made Fast leave
+// several seconds of dead air at the end of every scene.
+export function secondsForWords(words, rate = 1) {
+  return words / (WORDS_PER_SECOND * (rate || 1));
 }
 
 function pickTopProjects(projects, count, customInstruction) {

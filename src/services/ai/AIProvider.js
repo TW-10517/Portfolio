@@ -17,7 +17,7 @@ export class AIProvider {
 
   // brief: plain-object facts for one scene (see sceneBuilder.js)
   // sceneType: 'intro' | 'about' | 'skills' | 'experience' | 'project' | 'education' | 'achievements' | 'testimonial' | 'closing'
-  // options: { style, tone, audience, language, maxWords, customInstruction }
+  // options: { style, audience, language, maxWords, customInstruction }
   // Returns: Promise<string> narration text for that scene.
   // eslint-disable-next-line no-unused-vars
   async writeScript(brief, sceneType, options) {

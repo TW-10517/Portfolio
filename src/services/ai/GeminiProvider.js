@@ -1,4 +1,5 @@
 import { AIProvider } from "./AIProvider.js";
+import { assertGrounded, pruneEmpty } from "./factGuard.js";
 
 const MODEL = "gemini-2.0-flash";
 const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
@@ -51,20 +52,22 @@ export class GeminiProvider extends AIProvider {
     const json = await res.json();
     const text = json?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "";
     if (!text.trim()) throw new Error("AI generation returned an empty script.");
-    return text.trim();
+    // Same grounding guard as the local model — a cloud model is no more
+    // entitled to invent the user's career than a local one.
+    return assertGrounded(text.trim(), brief);
   }
 }
 
 function buildPrompt(brief, sceneType, options) {
-  const { style = "professional", tone = "professional", audience = "general", language = "English", maxWords = 40 } = options;
+  const { style = "professional", audience = "general", language = "English", maxWords = 40 } = options;
   return [
     `You are writing one short narration segment (a "${sceneType}" scene) for an AI-narrated portfolio video.`,
-    `Style: ${style}. Tone: ${tone}. Audience: ${audience}. Language: write only in ${language}.`,
+    `Style: ${style}. Audience: ${audience}. Language: write only in ${language}.`,
     `Hard rule: use ONLY the facts given below. Do not invent companies, numbers, skills, dates, or achievements that aren't listed. If a fact is missing, don't mention it.`,
     `Keep it to at most ${maxWords} words, spoken narration style (no headings, no markdown, no quotes around the whole thing).`,
     options.customInstruction ? `Additional direction from the user: ${options.customInstruction}` : "",
     `Facts (JSON):`,
-    JSON.stringify(brief),
+    JSON.stringify(pruneEmpty(brief) ?? {}),
   ]
     .filter(Boolean)
     .join("\n");

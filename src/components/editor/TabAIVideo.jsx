@@ -1,15 +1,24 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePortfolioStore } from "../../store/usePortfolioStore.js";
 import { Select, TextArea } from "../ui/Field.jsx";
 import { Button } from "../ui/Button.jsx";
 import { slugify } from "../../utils/slug.js";
 import { buildScenePlan, LENGTH_OPTIONS, AUDIENCE_OPTIONS, STYLE_OPTIONS, DEFAULT_SECTIONS, ALL_SECTIONS } from "../../services/video/sceneBuilder.js";
-import { writeNarration, rewriteScene } from "../../services/video/aiWriter.js";
-import { getAIProvider, getGeminiApiKey, setGeminiApiKey } from "../../services/ai/index.js";
+import { writeNarration, rewriteScene, retimeScenePlan } from "../../services/video/aiWriter.js";
+import {
+  getAIProvider,
+  getGeminiApiKey,
+  setGeminiApiKey,
+  getOllamaModel,
+  setOllamaModel,
+  getOllamaUrl,
+  listOllamaModels,
+  isInstantProvider,
+} from "../../services/ai/index.js";
 import { getVoices, isTTSSupported, SPEED_RATES, cancelSpeech } from "../../services/video/tts.js";
 import { playScenePlan, drawFirstFrame, renderAtScene, sceneIndexAtPosition, sceneStartTime, CANVAS_SIZE } from "../../services/video/player.js";
-import { recordScenePlan, downloadBlob } from "../../services/video/exportVideo.js";
+import { recordScenePlan, downloadBlob, pickSupportedMimeType, fileExtensionForMimeType, containerLabel } from "../../services/video/exportVideo.js";
 import { drawScene, buildImageBundle } from "../../services/video/sceneRenderer.js";
 import { formatTimestamp } from "../../services/video/captions.js";
 
@@ -23,6 +32,17 @@ const SECTION_LABELS = {
   achievements: "Achievements",
   testimonial: "Testimonial",
 };
+const DEFAULT_CONFIG = {
+  style: "professional",
+  audience: "general",
+  length: "standard",
+  language: "English",
+  speed: "normal",
+  sections: DEFAULT_SECTIONS,
+  customInstruction: "",
+  voiceURI: "",
+};
+
 const STYLE_ICONS = { professional: "🧑‍💼", creative: "🎨", minimal: "✏️", storytelling: "📖" };
 const SCENE_ICONS = {
   intro: "👋",
@@ -64,21 +84,17 @@ function Chip({ children, active, onClick }) {
 export function TabAIVideo() {
   const data = usePortfolioStore((s) => s.data);
   const canvasRef = useRef(null);
-  const teaserRef = useRef(null);
   const abortRef = useRef(null);
   const timelineRef = useRef(null);
 
-  const [config, setConfig] = useState({
-    style: "professional",
-    audience: "general",
-    length: "standard",
-    language: "English",
-    tone: "professional",
-    speed: "normal",
-    sections: DEFAULT_SECTIONS,
-    customInstruction: "",
-    voiceURI: "",
-  });
+  // Which container this browser can actually record decides both the button
+  // label and the file extension, so work it out once up front rather than
+  // promising a format the recorder may not produce.
+  const exportMimeType = useMemo(() => pickSupportedMimeType(), []);
+  const exportContainer = containerLabel(exportMimeType);
+  const exportExtension = fileExtensionForMimeType(exportMimeType);
+
+  const [config, setConfig] = useState(DEFAULT_CONFIG);
   const [voices, setVoices] = useState([]);
   const [status, setStatus] = useState("idle"); // idle | generating | ready | error
   const [error, setError] = useState("");
@@ -96,6 +112,9 @@ export function TabAIVideo() {
   const [exportProgress, setExportProgress] = useState(null);
   const [exportNote, setExportNote] = useState("");
   const [geminiKeyInput, setGeminiKeyInput] = useState(() => getGeminiApiKey());
+  const [ollamaModels, setOllamaModels] = useState([]);
+  const [ollamaModel, setOllamaModelState] = useState(() => getOllamaModel());
+  const [ollamaChecked, setOllamaChecked] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
@@ -117,29 +136,74 @@ export function TabAIVideo() {
     latestRef.current = { scenePlan, data };
   });
 
-  const setTeaserNode = useCallback((el) => {
-    teaserRef.current = el;
-    if (!el) return;
-    const { data: d } = latestRef.current;
-    const brief = {
-      name: d.profile?.name || "",
-      roles: d.profile?.roles || "",
-      tagline: d.profile?.tagline || "",
-      location: d.profile?.location || "",
-    };
-    const fakePlan = { scenes: [{ type: "intro", brief }] };
-    buildImageBundle(fakePlan, d).then((images) => {
-      if (!teaserRef.current) return;
-      const ctx = teaserRef.current.getContext("2d");
-      drawScene(ctx, { width: CANVAS_SIZE.width, height: CANVAS_SIZE.height, scene: fakePlan.scenes[0], data: d, theme: d.theme, images, captionText: "", t: 0.6 });
-    });
-  }, []);
+  // regenerate() must keep a stable identity (it's a useEffect dependency),
+  // so it reads the current config through refs rather than closing over it.
+  const configRef = useRef(config);
+  const narrationOptionsRef = useRef(null);
 
   const setCanvasNode = useCallback((el) => {
     canvasRef.current = el;
     if (!el) return;
     const { scenePlan: sp, data: d } = latestRef.current;
-    if (sp) drawFirstFrame(el, sp, d, d.theme);
+    if (sp) {
+      drawFirstFrame(el, sp, d, d.theme);
+      return;
+    }
+    // Before the very first script finishes, draw the intro scene straight
+    // from the profile so the player shows the real video's opening frame
+    // instead of an empty black box while the script is still being written.
+    const fakePlan = {
+      scenes: [
+        {
+          type: "intro",
+          brief: {
+            name: d.profile?.name || "",
+            roles: d.profile?.roles || "",
+            tagline: d.profile?.tagline || "",
+            location: d.profile?.location || "",
+          },
+        },
+      ],
+    };
+    buildImageBundle(fakePlan, d).then((images) => {
+      if (canvasRef.current !== el) return;
+      drawScene(el.getContext("2d"), {
+        width: CANVAS_SIZE.width,
+        height: CANVAS_SIZE.height,
+        scene: fakePlan.scenes[0],
+        data: d,
+        theme: d.theme,
+        images,
+        captionText: "",
+        t: 0.6,
+      });
+    });
+  }, []);
+
+  // Look for a local model on mount. If one is installed and the user hasn't
+  // chosen anything yet, adopt it automatically — a real LLM that costs
+  // nothing and needs no account is a strictly better default than the
+  // template writer, and it means never asking for an API key at all.
+  useEffect(() => {
+    let cancelled = false;
+    listOllamaModels(getOllamaUrl()).then((models) => {
+      if (cancelled) return;
+      setOllamaModels(models);
+      setOllamaChecked(true);
+      const saved = getOllamaModel();
+      if (saved && !models.includes(saved)) {
+        // The model was uninstalled since last time — fall back rather than
+        // failing every scene against a model that no longer exists.
+        setOllamaModel("");
+        setOllamaModelState("");
+      } else if (!saved && models.length) {
+        setOllamaModel(models[0]);
+        setOllamaModelState(models[0]);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const providerName = getAIProvider("auto").name;
@@ -153,39 +217,99 @@ export function TabAIVideo() {
   };
 
   const narrationOptions = () => ({
+    rate: SPEED_RATES[config.speed],
     style: config.style,
-    tone: config.tone,
     audience: config.audience,
     language: config.language,
     customInstruction: config.customInstruction,
   });
+  configRef.current = config;
+  narrationOptionsRef.current = narrationOptions;
 
-  const handleGenerate = async () => {
+  // The Speed control changes how long the narration actually takes to
+  // speak, so every scene has to be re-timed to match — otherwise Slow gets
+  // clipped mid-sentence and Fast ends each scene in silence. Re-timing is
+  // pure arithmetic on the existing script, so it needs no AI call and is
+  // kept separate from the regeneration path below.
+  useEffect(() => {
+    setScenePlan((plan) => (plan ? retimeScenePlan(plan, SPEED_RATES[config.speed]) : plan));
+  }, [config.speed]);
+
+  // Only these settings change what the script actually SAYS. Speed and voice
+  // are deliberately excluded — they alter delivery, not wording, so touching
+  // them must not throw away a script (or a user's hand-edits to it).
+  const scriptSignature = JSON.stringify({
+    audience: config.audience,
+    style: config.style,
+    length: config.length,
+    language: config.language,
+    sections: config.sections,
+    customInstruction: config.customInstruction,
+  });
+
+  // Every regeneration gets a ticket; only the newest one is allowed to land.
+  // Without this, a fast sequence of edits can resolve out of order and leave
+  // the preview showing the script for a setting the user already moved off.
+  const genTicketRef = useRef(0);
+  const genAbortRef = useRef(null);
+
+  const regenerate = useCallback(async () => {
+    const ticket = ++genTicketRef.current;
+    genAbortRef.current?.abort();
+    const genController = new AbortController();
+    genAbortRef.current = genController;
+    abortRef.current?.abort();
+    cancelSpeech();
     setStatus("generating");
     setError("");
     setExportNote("");
     setGenProgress(null);
     try {
-      const plan = buildScenePlan(data, config);
+      const plan = buildScenePlan(latestRef.current.data, configRef.current);
       if (!plan.scenes.length) throw new Error("Add some portfolio content first — there's nothing to build a video from yet.");
       const provider = getAIProvider("auto");
-      const narrated = await writeNarration(plan, provider, { ...narrationOptions(), onProgress: setGenProgress });
+      const narrated = await writeNarration(plan, provider, {
+        ...narrationOptionsRef.current(),
+        signal: genController.signal,
+        onProgress: (p) => genTicketRef.current === ticket && setGenProgress(p),
+      });
+      if (genTicketRef.current !== ticket) return;
       setScenePlan(narrated);
+      setSeekIndex(0);
       setStatus("ready");
     } catch (e) {
+      // A superseded rebuild is expected, not a failure worth showing.
+      if (e?.name === "AbortError" || genTicketRef.current !== ticket) return;
       setStatus("error");
       setError(e.message || "Something went wrong generating your video.");
     }
-  };
+  }, []);
 
-  const handleStartOver = () => {
-    abortRef.current?.abort();
-    cancelSpeech();
-    setScenePlan(null);
-    setStatus("idle");
-    setError("");
-    setExportNote("");
-  };
+  // A finished rebuild has to be painted onto the canvas. The ref callback
+  // only fires when the element itself mounts, so without this the player
+  // would keep showing the previous script's frame (or the pre-generation
+  // teaser) after every live rebuild.
+  useEffect(() => {
+    if (!scenePlan || !canvasRef.current || isPlaying || dragging) return;
+    renderAtScene(canvasRef.current, scenePlan, data, data.theme, Math.min(seekIndex, scenePlan.scenes.length - 1), 0.5);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scenePlan, data.theme, seekIndex]);
+
+  // Live rebuild: the script re-writes itself as settings change, so the
+  // preview above always matches the controls below without a Generate step.
+  // The debounce is much longer for a cloud provider than for the offline
+  // writer, because each cloud rebuild spends the user's free API quota
+  // while the local one is instant and costs nothing.
+  const instantProvider = isInstantProvider(getAIProvider("auto"));
+  useEffect(() => {
+    const delay = scenePlan === null ? 0 : instantProvider ? 350 : 2000;
+    const timer = setTimeout(regenerate, delay);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // providerName is in the deps so switching between two local models (or
+    // to/from the cloud one) also rewrites the script — the writer changing
+    // is just as much a script change as a setting changing.
+  }, [scriptSignature, instantProvider, providerName, regenerate]);
 
   const handleRegenerateScene = async (sceneId) => {
     setRegeneratingId(sceneId);
@@ -321,7 +445,7 @@ export function TabAIVideo() {
     setExportNote("");
     setError("");
     try {
-      const { blob, audioIncluded } = await recordScenePlan(canvasRef.current, scenePlan, data, {
+      const { blob, audioIncluded, audioHadSound, mimeType } = await recordScenePlan(canvasRef.current, scenePlan, data, {
         theme: data.theme,
         voice: selectedVoice,
         rate: SPEED_RATES[config.speed],
@@ -329,11 +453,14 @@ export function TabAIVideo() {
         withAudio: true,
         onProgress: setExportProgress,
       });
-      downloadBlob(blob, `${slugify(data.profile?.name || "portfolio")}-video.webm`);
+      const container = containerLabel(mimeType);
+      downloadBlob(blob, `${slugify(data.profile?.name || "portfolio")}-video.${fileExtensionForMimeType(mimeType)}`);
       setExportNote(
-        audioIncluded
-          ? "Downloaded as WebM with narration audio."
-          : "Downloaded as WebM without narration audio — allow tab-audio sharing when prompted if you want the voice included."
+        !audioIncluded
+          ? `Downloaded as ${container} — no audio was captured, so the file has captions but no voice. To include narration, run the export again and share a surface with its audio enabled.`
+          : audioHadSound
+          ? `Downloaded as ${container} with narration audio.`
+          : `Downloaded as ${container}, but the shared audio was silent, so the file has captions and no voice. The narration is spoken by your operating system, so sharing a single tab usually can't hear it — re-export and pick “Entire Screen” with “Share system audio” instead.`
       );
     } catch (e) {
       setError(e.message || "Export failed.");
@@ -354,336 +481,396 @@ export function TabAIVideo() {
     ? playProgress * scenePlan.totalSeconds
     : sceneStartTime(scenePlan, seekIndex);
 
+  const isBusy = status === "generating";
+  const providerLabel = scenePlan?.scenes?.[0]?.providerName || providerName;
+
   return (
     <div className="min-h-full">
-      <div className="border-b border-slate-800 px-6 sm:px-8 py-5 flex items-center justify-between gap-4">
+      <div className="border-b border-slate-800 px-4 sm:px-8 py-4 flex items-center justify-between gap-4">
         <div>
           <h1 className="text-lg sm:text-xl font-head font-bold text-white flex items-center gap-2">🎬 AI Video Portfolio</h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-0.5">AI writes the script, your browser renders the video — ¥0 by default.</p>
+          <p className="text-xs sm:text-sm text-slate-400 mt-0.5">Change anything below — the video above rebuilds itself as you go.</p>
         </div>
-        {scenePlan && (
-          <Button variant="ghost" size="sm" onClick={handleStartOver}>
-            ← Start over
-          </Button>
-        )}
+        <Button variant="ghost" size="sm" onClick={() => setConfig(DEFAULT_CONFIG)} title="Reset all video settings">
+          ↺ Reset settings
+        </Button>
       </div>
 
-      <div className="px-6 sm:px-8 py-8">
-        <AnimatePresence mode="wait">
-          {!scenePlan ? (
-            <motion.div key="config" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
-              <div className="grid lg:grid-cols-[1fr_400px] gap-8 max-w-6xl mx-auto items-start">
-                <div className="space-y-5 order-2 lg:order-1">
-                  <Card title="Purpose" hint="Who is this video for? The AI shifts emphasis to match.">
-                    <Select value={config.audience} onChange={(e) => setConfig((c) => ({ ...c, audience: e.target.value }))}>
-                      {AUDIENCE_OPTIONS.map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                      ))}
-                    </Select>
-                  </Card>
+      <div className="border-b border-slate-800 px-4 sm:px-8 py-4">
+        <div className="max-w-3xl mx-auto space-y-3">
+          {/* Capping the WRAPPER's width (rather than the canvas's height)
+              keeps the box itself 16:9 on short screens — clamping height
+              alone leaves the element wider than its content and pillarboxes
+              the video in black bars. */}
+          <div
+            className="rounded-2xl overflow-hidden border border-slate-800 bg-black relative shadow-2xl shadow-cyan-500/10 mx-auto w-full"
+            style={{ maxWidth: "calc(42vh * 16 / 9)" }}
+          >
+            <canvas
+              ref={setCanvasNode}
+              width={CANVAS_SIZE.width}
+              height={CANVAS_SIZE.height}
+              className="w-full h-auto block"
+              style={{ aspectRatio: "16/9" }}
+            />
+            <div className="absolute top-3 left-3 flex items-center gap-2">
+              {activeSceneId ? (
+                <span className="px-2.5 py-1 rounded-full bg-slate-950/70 backdrop-blur text-[10px] font-semibold tracking-wide text-cyan-300 border border-cyan-400/40 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse-dot" /> PLAYING
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 rounded-full bg-slate-950/70 backdrop-blur text-[10px] font-semibold tracking-wide text-slate-300 border border-slate-700">
+                  LIVE PREVIEW
+                </span>
+              )}
+            </div>
 
-                  <Card title="Style">
-                    <div className="grid grid-cols-2 gap-2.5">
-                      {STYLE_OPTIONS.map((o) => (
-                        <button
-                          key={o.value}
-                          type="button"
-                          onClick={() => setConfig((c) => ({ ...c, style: o.value }))}
-                          className={`text-left rounded-xl border px-3.5 py-3 transition ${
-                            config.style === o.value ? "border-cyan-400 bg-cyan-400/10 shadow-[0_0_0_1px_rgba(34,211,238,0.2)]" : "border-slate-700 hover:border-slate-600"
-                          }`}
-                        >
-                          <div className="text-sm font-medium text-white flex items-center gap-1.5">
-                            <span>{STYLE_ICONS[o.value]}</span> {o.label}
-                          </div>
-                          <div className="text-[11px] text-slate-500 mt-0.5">{o.hint}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </Card>
-
-                  <Card title="Format">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-medium text-slate-400 mb-1.5">Length</label>
-                        <Select value={config.length} onChange={(e) => setConfig((c) => ({ ...c, length: e.target.value }))}>
-                          {Object.entries(LENGTH_OPTIONS).map(([key, o]) => (
-                            <option key={key} value={key}>{o.label}</option>
-                          ))}
-                        </Select>
-                      </div>
-                      <div>
-                        <label className="block text-xs font-medium text-slate-400 mb-1.5">Language</label>
-                        <Select value={config.language} onChange={(e) => setConfig((c) => ({ ...c, language: e.target.value }))}>
-                          {LANGUAGES.map((l) => (
-                            <option key={l} value={l}>{l}</option>
-                          ))}
-                        </Select>
-                      </div>
-                    </div>
-                    {languageWarning && (
-                      <p className="text-[11px] text-amber-400 mt-2">
-                        Narration will stay in English — add a Gemini API key below to write scripts in {config.language}.
-                      </p>
-                    )}
-                  </Card>
-
-                  <Card title="Voice" hint={!isTTSSupported() ? "This browser doesn't support speech synthesis — captions will still work." : undefined}>
-                    {isTTSSupported() ? (
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="col-span-2">
-                          <label className="block text-xs font-medium text-slate-400 mb-1.5">Narration voice</label>
-                          <Select value={config.voiceURI} onChange={(e) => setConfig((c) => ({ ...c, voiceURI: e.target.value }))}>
-                            <option value="">System default</option>
-                            {voices.map((v) => (
-                              <option key={v.voiceURI} value={v.voiceURI}>{v.name} ({v.lang})</option>
-                            ))}
-                          </Select>
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-slate-400 mb-1.5">Speed</label>
-                          <Select value={config.speed} onChange={(e) => setConfig((c) => ({ ...c, speed: e.target.value }))}>
-                            <option value="slow">Slow</option>
-                            <option value="normal">Normal</option>
-                            <option value="fast">Fast</option>
-                          </Select>
-                        </div>
-                      </div>
-                    ) : null}
-                    <div className="mt-3">
-                      <label className="block text-xs font-medium text-slate-400 mb-1.5">Tone</label>
-                      <div className="flex flex-wrap gap-2">
-                        {["professional", "friendly", "energetic", "calm"].map((t) => (
-                          <Chip key={t} active={config.tone === t} onClick={() => setConfig((c) => ({ ...c, tone: t }))}>
-                            {t[0].toUpperCase() + t.slice(1)}
-                          </Chip>
-                        ))}
-                      </div>
-                    </div>
-                  </Card>
-
-                  <Card title="Sections" hint="Only your real portfolio content is used — nothing is invented.">
-                    <div className="flex flex-wrap gap-2">
-                      {ALL_SECTIONS.map((key) => (
-                        <Chip key={key} active={config.sections.includes(key)} onClick={() => toggleSection(key)}>
-                          {SCENE_ICONS[key === "projects" ? "project" : key]} {SECTION_LABELS[key]}
-                        </Chip>
-                      ))}
-                    </div>
-                  </Card>
-
-                  <Card title="How should the video feel?" hint="Optional — nudges tone and which projects get priority.">
-                    <TextArea
-                      rows={3}
-                      value={config.customInstruction}
-                      onChange={(e) => setConfig((c) => ({ ...c, customInstruction: e.target.value }))}
-                      placeholder="e.g. Make it professional but friendly. Focus more on my AI projects."
-                    />
-                  </Card>
-
-                  <div>
-                    <button type="button" className="text-xs text-slate-500 hover:text-slate-300" onClick={() => setShowAdvanced((v) => !v)}>
-                      {showAdvanced ? "Hide" : "Show"} advanced — AI provider ({providerName})
-                    </button>
-                    {showAdvanced && (
-                      <div className="rounded-xl border border-slate-800 p-4 mt-2 space-y-2 bg-slate-900/40">
-                        <p className="text-xs text-slate-400">
-                          Scripts are written locally by default — free, no setup, English only. Add your own Gemini API key for richer phrasing and
-                          other languages. Stored only in this browser; never required.
-                        </p>
-                        <div className="flex gap-2">
-                          <input
-                            type="password"
-                            value={geminiKeyInput}
-                            onChange={(e) => setGeminiKeyInput(e.target.value)}
-                            placeholder="Gemini API key (optional)"
-                            className="flex-1 rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-cyan-400"
-                          />
-                          <Button size="sm" variant="subtle" onClick={saveGeminiKey}>Save</Button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="order-1 lg:order-2 lg:sticky lg:top-6 space-y-4">
-                  <div className="rounded-2xl overflow-hidden border border-slate-800 bg-black relative shadow-2xl shadow-cyan-500/10">
-                    <canvas ref={setTeaserNode} width={CANVAS_SIZE.width} height={CANVAS_SIZE.height} className="w-full h-auto block" style={{ aspectRatio: "16/9" }} />
-                    <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-slate-950/70 backdrop-blur text-[10px] font-semibold tracking-wide text-slate-300 border border-slate-700">
-                      LIVE PREVIEW
-                    </div>
-                    <AnimatePresence>
-                      {status === "generating" && (
-                        <motion.div
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex flex-col items-center justify-center gap-3 text-center px-6"
-                        >
-                          <motion.div
-                            animate={{ rotate: 360 }}
-                            transition={{ repeat: Infinity, duration: 1.1, ease: "linear" }}
-                            className="w-9 h-9 rounded-full border-2 border-cyan-400 border-t-transparent"
-                          />
-                          <p className="text-sm text-white font-medium">
-                            {genProgress?.title ? `Writing "${genProgress.title}"…` : "Analyzing your portfolio…"}
-                          </p>
-                          {genProgress && <p className="text-xs text-slate-400">{genProgress.index}/{genProgress.total} scenes</p>}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-
-                  <div className="flex flex-wrap gap-1.5">
-                    <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-800 text-slate-300">{AUDIENCE_OPTIONS.find((o) => o.value === config.audience)?.label}</span>
-                    <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-800 text-slate-300">{STYLE_OPTIONS.find((o) => o.value === config.style)?.label}</span>
-                    <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-800 text-slate-300">{LENGTH_OPTIONS[config.length].label}</span>
-                    <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-800 text-slate-300">{config.language}</span>
-                  </div>
-
-                  {error && <p className="text-sm text-red-400">{error}</p>}
-                  <Button className="w-full" size="lg" disabled={status === "generating"} onClick={handleGenerate}>
-                    {status === "generating" ? "Creating your story…" : "✨ Generate My Video"}
-                  </Button>
-                  <p className="text-[11px] text-slate-600 text-center">via {providerName} · renders entirely in your browser</p>
-                </div>
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div key="studio" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
-              <div className="grid lg:grid-cols-[1fr_380px] gap-8 max-w-7xl mx-auto items-start">
-                <div className="space-y-4">
-                  <div className="rounded-2xl overflow-hidden border border-slate-800 bg-black relative shadow-2xl shadow-cyan-500/10">
-                    <canvas ref={setCanvasNode} width={CANVAS_SIZE.width} height={CANVAS_SIZE.height} className="w-full h-auto block" style={{ aspectRatio: "16/9" }} />
-                    {activeSceneId && (
-                      <div className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-slate-950/70 backdrop-blur text-[10px] font-semibold tracking-wide text-cyan-300 border border-cyan-400/40 flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse-dot" /> PLAYING
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={isPlaying ? handleStop : handlePlay}
-                      disabled={exporting}
-                      className="w-12 h-12 shrink-0 rounded-full bg-gradient-to-r from-cyan-400 to-violet-500 text-slate-950 flex items-center justify-center text-base shadow-lg shadow-cyan-500/25 hover:scale-105 active:scale-95 transition disabled:opacity-40 disabled:pointer-events-none"
-                      title={isPlaying ? "Stop" : "Play"}
-                    >
-                      {isPlaying ? "⏹" : "▶"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowCaptions((v) => !v)}
-                      className={`h-9 px-3 rounded-full text-xs font-medium border transition ${showCaptions ? "border-cyan-400 text-cyan-300 bg-cyan-400/10" : "border-slate-700 text-slate-500"}`}
-                    >
-                      CC {showCaptions ? "On" : "Off"}
-                    </button>
-                    <div
-                      ref={timelineRef}
-                      onMouseDown={handleScrubStart}
-                      className={`relative flex-1 min-w-0 h-4 flex items-center group ${exporting ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
-                    >
-                      <div className="relative w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                        {scenePlan.scenes.slice(1).map((_, i) => (
-                          <div
-                            key={i}
-                            className="absolute top-0 bottom-0 w-px bg-slate-950/70 z-10"
-                            style={{ left: `${(sceneStartTime(scenePlan, i + 1) / scenePlan.totalSeconds) * 100}%` }}
-                          />
-                        ))}
-                        <div
-                          className="h-full bg-gradient-to-r from-cyan-400 to-violet-500"
-                          style={{ width: `${Math.min(100, (currentSeconds / scenePlan.totalSeconds) * 100)}%` }}
-                        />
-                      </div>
-                      <div
-                        className={`absolute top-1/2 -translate-y-1/2 -ml-1.5 w-3 h-3 rounded-full bg-white shadow transition-opacity ${
-                          dragging ? "opacity-100 scale-125" : "opacity-0 group-hover:opacity-100"
-                        }`}
-                        style={{ left: `${Math.min(100, (currentSeconds / scenePlan.totalSeconds) * 100)}%` }}
-                      />
-                    </div>
-                    <span className="text-xs text-slate-500 tabular-nums shrink-0">
-                      {formatTimestamp(currentSeconds)} / {formatTimestamp(scenePlan.totalSeconds)}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    ~{scenePlan.totalSeconds}s · {scenePlan.scenes.length} scenes · scripted via {scenePlan.scenes[0]?.providerName}
+            {/* Kept as an overlay on the previous frame rather than blanking
+                the canvas, so rapid edits don't flash black between rebuilds. */}
+            <AnimatePresence>
+              {isBusy && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm flex flex-col items-center justify-center gap-2.5 text-center px-6"
+                >
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ repeat: Infinity, duration: 1.1, ease: "linear" }}
+                    className="w-8 h-8 rounded-full border-2 border-cyan-400 border-t-transparent"
+                  />
+                  <p className="text-xs text-white font-medium">
+                    {genProgress?.title ? `Writing "${genProgress.title}"…` : "Rewriting your script…"}
                   </p>
+                  {genProgress && <p className="text-[11px] text-slate-400">{genProgress.index}/{genProgress.total} scenes</p>}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
-                  <div className="hidden lg:block rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-                    <p className="text-[11px] text-slate-500">
-                      Exports as a downloadable <span className="text-slate-300 font-medium">.webm</span> file rendered entirely in your browser —
-                      nothing is uploaded or stored on our servers. For narration audio in the file, allow tab-audio sharing when your browser
-                      prompts you during export.
-                    </p>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={isPlaying ? handleStop : handlePlay}
+              disabled={exporting || !scenePlan}
+              className="w-11 h-11 shrink-0 rounded-full bg-gradient-to-r from-cyan-400 to-violet-500 text-slate-950 flex items-center justify-center text-base shadow-lg shadow-cyan-500/25 hover:scale-105 active:scale-95 transition disabled:opacity-40 disabled:pointer-events-none"
+              title={isPlaying ? "Stop" : "Play"}
+            >
+              {isPlaying ? "⏹" : "▶"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCaptions((v) => !v)}
+              className={`h-9 px-3 rounded-full text-xs font-medium border transition shrink-0 ${
+                showCaptions ? "border-cyan-400 text-cyan-300 bg-cyan-400/10" : "border-slate-700 text-slate-500"
+              }`}
+            >
+              CC {showCaptions ? "On" : "Off"}
+            </button>
+            <div
+              ref={timelineRef}
+              onMouseDown={handleScrubStart}
+              className={`relative flex-1 min-w-0 h-4 flex items-center group ${
+                exporting || !scenePlan ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+              }`}
+            >
+              <div className="relative w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                {scenePlan?.scenes.slice(1).map((_, i) => (
+                  <div
+                    key={i}
+                    className="absolute top-0 bottom-0 w-px bg-slate-950/70 z-10"
+                    style={{ left: `${(sceneStartTime(scenePlan, i + 1) / scenePlan.totalSeconds) * 100}%` }}
+                  />
+                ))}
+                <div
+                  className="h-full bg-gradient-to-r from-cyan-400 to-violet-500"
+                  style={{ width: scenePlan ? `${Math.min(100, (currentSeconds / scenePlan.totalSeconds) * 100)}%` : "0%" }}
+                />
+              </div>
+              <div
+                className={`absolute top-1/2 -translate-y-1/2 -ml-1.5 w-3 h-3 rounded-full bg-white shadow transition-opacity ${
+                  dragging ? "opacity-100 scale-125" : "opacity-0 group-hover:opacity-100"
+                }`}
+                style={{ left: scenePlan ? `${Math.min(100, (currentSeconds / scenePlan.totalSeconds) * 100)}%` : "0%" }}
+              />
+            </div>
+            <span className="text-xs text-slate-500 tabular-nums shrink-0">
+              {formatTimestamp(currentSeconds)} / {formatTimestamp(scenePlan?.totalSeconds || 0)}
+            </span>
+            <Button size="sm" onClick={handleExport} disabled={exporting || isPlaying || !scenePlan} className="shrink-0">
+              {exporting ? `${exportProgress ? `${exportProgress.index}/${exportProgress.total}` : "…"}` : `⬇ ${exportContainer}`}
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <p className="text-[11px] text-slate-500">
+              {scenePlan ? `~${scenePlan.totalSeconds}s · ${scenePlan.scenes.length} scenes · scripted via ${providerLabel}` : "Preparing your video…"}
+            </p>
+            {error && <p className="text-[11px] text-red-400">{error}</p>}
+            {exportNote && <p className="text-[11px] text-cyan-400">{exportNote}</p>}
+          </div>
+        </div>
+      </div>
+
+      <div className="px-4 sm:px-8 py-6">
+        <div className="max-w-3xl mx-auto space-y-5">
+          <div className="grid sm:grid-cols-2 gap-5">
+            <Card title="Purpose" hint="Who is this video for? The AI shifts emphasis to match.">
+              <Select value={config.audience} onChange={(e) => setConfig((c) => ({ ...c, audience: e.target.value }))}>
+                {AUDIENCE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </Select>
+            </Card>
+
+            <Card title="Format" hint="Length drives how many scenes make the cut.">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Length</label>
+                  <Select value={config.length} onChange={(e) => setConfig((c) => ({ ...c, length: e.target.value }))}>
+                    {Object.entries(LENGTH_OPTIONS).map(([key, o]) => (
+                      <option key={key} value={key}>{o.label}</option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Language</label>
+                  <Select value={config.language} onChange={(e) => setConfig((c) => ({ ...c, language: e.target.value }))}>
+                    {LANGUAGES.map((l) => (
+                      <option key={l} value={l}>{l}</option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+              {languageWarning && (
+                <p className="text-[11px] text-amber-400 mt-2">
+                  Narration will stay in English — add a Gemini API key below to write scripts in {config.language}.
+                </p>
+              )}
+            </Card>
+          </div>
+
+          <Card title="Style">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+              {STYLE_OPTIONS.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => setConfig((c) => ({ ...c, style: o.value }))}
+                  className={`text-left rounded-xl border px-3.5 py-3 transition ${
+                    config.style === o.value
+                      ? "border-cyan-400 bg-cyan-400/10 shadow-[0_0_0_1px_rgba(34,211,238,0.2)]"
+                      : "border-slate-700 hover:border-slate-600"
+                  }`}
+                >
+                  <div className="text-sm font-medium text-white flex items-center gap-1.5">
+                    <span>{STYLE_ICONS[o.value]}</span> {o.label}
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">{o.hint}</div>
+                </button>
+              ))}
+            </div>
+          </Card>
+
+          <Card title="Sections" hint="Only your real portfolio content is used — nothing is invented.">
+            <div className="flex flex-wrap gap-2">
+              {ALL_SECTIONS.map((key) => (
+                <Chip key={key} active={config.sections.includes(key)} onClick={() => toggleSection(key)}>
+                  {SCENE_ICONS[key === "projects" ? "project" : key]} {SECTION_LABELS[key]}
+                </Chip>
+              ))}
+            </div>
+          </Card>
+
+          <Card
+            title="Voice & delivery"
+            hint={
+              !isTTSSupported()
+                ? "This browser doesn't support speech synthesis — captions will still work."
+                : "Speed re-times the video instantly; it never rewrites the script."
+            }
+          >
+            {isTTSSupported() && (
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Narration voice</label>
+                  <Select value={config.voiceURI} onChange={(e) => setConfig((c) => ({ ...c, voiceURI: e.target.value }))}>
+                    <option value="">System default</option>
+                    {voices.map((v) => (
+                      <option key={v.voiceURI} value={v.voiceURI}>{v.name} ({v.lang})</option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Speed</label>
+                  <Select value={config.speed} onChange={(e) => setConfig((c) => ({ ...c, speed: e.target.value }))}>
+                    <option value="slow">Slow</option>
+                    <option value="normal">Normal</option>
+                    <option value="fast">Fast</option>
+                  </Select>
+                </div>
+              </div>
+            )}
+          </Card>
+
+          <Card title="How should the video feel?" hint="Optional — nudges wording and which projects get priority.">
+            <TextArea
+              rows={2}
+              value={config.customInstruction}
+              onChange={(e) => setConfig((c) => ({ ...c, customInstruction: e.target.value }))}
+              placeholder="e.g. Make it professional but friendly. Focus more on my AI projects."
+            />
+          </Card>
+
+          <div>
+            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Scenes {scenePlan ? `(${scenePlan.scenes.length})` : ""}
+              </h3>
+              <p className="text-[11px] text-slate-600">Edits here survive Speed and Voice changes, but a setting above rewrites the script.</p>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-2.5">
+              {scenePlan?.scenes.map((scene, index) => (
+                <div
+                  key={scene.id}
+                  className={`rounded-xl border p-3.5 transition ${
+                    activeSceneId === scene.id || (!isPlaying && !dragging && index === seekIndex)
+                      ? "border-cyan-400 bg-cyan-400/5"
+                      : "border-slate-800 bg-slate-900/30"
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSeekIndex(index);
+                        renderAtScene(canvasRef.current, scenePlan, data, data.theme, index);
+                      }}
+                      className="text-xs font-semibold text-slate-200 flex items-center gap-1.5 hover:text-cyan-300"
+                      title="Show this scene in the player"
+                    >
+                      <span>{SCENE_ICONS[scene.type]}</span> {scene.title}
+                    </button>
+                    <div className="flex items-center gap-0.5">
+                      <button type="button" onClick={() => moveScene(index, -1)} disabled={index === 0} className="text-slate-500 hover:text-white disabled:opacity-30 text-xs w-5 h-5">↑</button>
+                      <button type="button" onClick={() => moveScene(index, 1)} disabled={index === scenePlan.scenes.length - 1} className="text-slate-500 hover:text-white disabled:opacity-30 text-xs w-5 h-5">↓</button>
+                      <button
+                        type="button"
+                        onClick={() => handleRegenerateScene(scene.id)}
+                        disabled={regeneratingId === scene.id}
+                        className="text-slate-500 hover:text-cyan-400 text-xs w-5 h-5"
+                        title="Rewrite just this scene"
+                      >
+                        {regeneratingId === scene.id ? "…" : "✨"}
+                      </button>
+                      <button type="button" onClick={() => removeScene(scene.id)} className="text-slate-500 hover:text-red-400 text-xs w-5 h-5">✕</button>
+                    </div>
+                  </div>
+                  <TextArea rows={2} value={scene.text} onChange={(e) => updateScene(scene.id, { text: e.target.value })} className="text-xs" />
+                  <div className="flex items-center gap-2 mt-2">
+                    <label className="text-[11px] text-slate-500">Duration</label>
+                    <input
+                      type="number"
+                      min={3}
+                      max={40}
+                      value={scene.duration}
+                      onChange={(e) => updateScene(scene.id, { duration: Number(e.target.value) || scene.duration })}
+                      className="w-14 rounded bg-slate-900 border border-slate-700 px-2 py-1 text-xs text-slate-100"
+                    />
+                    <span className="text-[11px] text-slate-500">sec</span>
                   </div>
                 </div>
+              ))}
+            </div>
+          </div>
 
-                <div className="space-y-3">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Scenes</h3>
-                  <div className="space-y-2.5 max-h-[calc(100vh-360px)] min-h-[200px] overflow-y-auto pr-1 -mr-1">
-                    {scenePlan.scenes.map((scene, index) => (
-                      <div
-                        key={scene.id}
-                        className={`rounded-xl border p-3.5 transition ${
-                          activeSceneId === scene.id || (!isPlaying && !dragging && index === seekIndex)
-                            ? "border-cyan-400 bg-cyan-400/5"
-                            : "border-slate-800 bg-slate-900/30"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                            <span>{SCENE_ICONS[scene.type]}</span> {scene.title}
-                          </span>
-                          <div className="flex items-center gap-0.5">
-                            <button type="button" onClick={() => moveScene(index, -1)} disabled={index === 0} className="text-slate-500 hover:text-white disabled:opacity-30 text-xs w-5 h-5">↑</button>
-                            <button type="button" onClick={() => moveScene(index, 1)} disabled={index === scenePlan.scenes.length - 1} className="text-slate-500 hover:text-white disabled:opacity-30 text-xs w-5 h-5">↓</button>
-                            <button
-                              type="button"
-                              onClick={() => handleRegenerateScene(scene.id)}
-                              disabled={regeneratingId === scene.id}
-                              className="text-slate-500 hover:text-cyan-400 text-xs w-5 h-5"
-                              title="Regenerate this scene's script"
-                            >
-                              {regeneratingId === scene.id ? "…" : "✨"}
-                            </button>
-                            <button type="button" onClick={() => removeScene(scene.id)} className="text-slate-500 hover:text-red-400 text-xs w-5 h-5">✕</button>
-                          </div>
-                        </div>
-                        <TextArea rows={2} value={scene.text} onChange={(e) => updateScene(scene.id, { text: e.target.value })} className="text-xs" />
-                        <div className="flex items-center gap-2 mt-2">
-                          <label className="text-[11px] text-slate-500">Duration</label>
-                          <input
-                            type="number"
-                            min={3}
-                            max={40}
-                            value={scene.duration}
-                            onChange={(e) => updateScene(scene.id, { duration: Number(e.target.value) || scene.duration })}
-                            className="w-14 rounded bg-slate-900 border border-slate-700 px-2 py-1 text-xs text-slate-100"
-                          />
-                          <span className="text-[11px] text-slate-500">sec</span>
-                        </div>
-                      </div>
-                    ))}
+          <div>
+            <button type="button" className="text-xs text-slate-500 hover:text-slate-300" onClick={() => setShowAdvanced((v) => !v)}>
+              {showAdvanced ? "Hide" : "Show"} advanced — script writer ({providerName})
+            </button>
+            {showAdvanced && (
+              <div className="rounded-xl border border-slate-800 p-4 mt-2 space-y-4 bg-slate-900/40">
+                <div>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <h4 className="text-xs font-semibold text-white">Local AI model</h4>
+                    {!ollamaChecked ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">checking…</span>
+                    ) : ollamaModels.length ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-400/10 text-emerald-400 border border-emerald-400/30">
+                        detected
+                      </span>
+                    ) : (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-500">not running</span>
+                    )}
                   </div>
 
-                  <div className="space-y-2 pt-2 border-t border-slate-800">
-                    {error && <p className="text-sm text-red-400">{error}</p>}
-                    {exportNote && <p className="text-xs text-cyan-400">{exportNote}</p>}
-                    <Button className="w-full" onClick={handleExport} disabled={exporting || isPlaying}>
-                      {exporting ? `Building video… ${exportProgress ? `${exportProgress.index}/${exportProgress.total}` : ""}` : "⬇ Export Video (WebM)"}
-                    </Button>
-                    <p className="lg:hidden text-[11px] text-slate-600">
-                      Renders entirely in your browser. For narration audio, allow tab-audio sharing when prompted during export.
+                  {ollamaModels.length > 0 ? (
+                    <>
+                      <p className="text-xs text-slate-400 mb-2">
+                        A real language model running on your own machine — free, no account, no API key, and your portfolio never leaves your
+                        computer.
+                      </p>
+                      <div className="flex gap-2 items-center">
+                        <Select
+                          value={ollamaModel}
+                          onChange={(e) => {
+                            setOllamaModel(e.target.value);
+                            setOllamaModelState(e.target.value);
+                          }}
+                        >
+                          <option value="">Off — use the built-in offline writer</option>
+                          {ollamaModels.map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </Select>
+                      </div>
+                      {ollamaModel && (
+                        <p className="text-[11px] text-slate-600 mt-2">
+                          Rebuilds wait 2s after your last change, since a local model takes a few seconds per scene.
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-xs text-slate-400">
+                      No local model found. Install{" "}
+                      <a href="https://ollama.com/download" target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline">
+                        Ollama
+                      </a>{" "}
+                      and run <code className="px-1 py-0.5 rounded bg-slate-800 text-slate-300">ollama pull qwen2.5:3b</code>, then reopen this tab.
+                      Until then scripts are written by the built-in offline writer — which always works and costs nothing.
                     </p>
+                  )}
+                </div>
+
+                <div className="pt-3 border-t border-slate-800">
+                  <h4 className="text-xs font-semibold text-white mb-1.5">Cloud model (optional)</h4>
+                  <p className="text-xs text-slate-400 mb-2">
+                    Only if you want it — a Gemini key enables non-English scripts. Stored in this browser, never required, and ignored entirely
+                    while a local model is selected.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={geminiKeyInput}
+                      onChange={(e) => setGeminiKeyInput(e.target.value)}
+                      placeholder="Gemini API key (optional)"
+                      className="flex-1 rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-cyan-400"
+                    />
+                    <Button size="sm" variant="subtle" onClick={saveGeminiKey}>Save</Button>
                   </div>
                 </div>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            )}
+          </div>
+
+          <p className="text-[11px] text-slate-600 pb-4">
+            Exports as a downloadable <span className="text-slate-300 font-medium">.{exportExtension}</span> file rendered entirely in your browser —
+            nothing is uploaded or stored on our servers. To include the voice, pick “Entire Screen” and tick “Share system audio” when your browser
+            prompts you during export.
+          </p>
+        </div>
       </div>
     </div>
   );

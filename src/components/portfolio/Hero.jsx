@@ -90,6 +90,16 @@ export function Hero() {
             >
               Contact Me
             </button>
+            {profile.resumeUrl && (
+              <a
+                href={profile.resumeUrl}
+                download={`${(profile.name || "resume").replace(/\s+/g, "-").toLowerCase()}-resume.pdf`}
+                className="px-7 py-3.5 rounded-full font-semibold text-sm border transition hover:-translate-y-0.5"
+                style={{ borderColor: palette.border, color: palette.text }}
+              >
+                Download Résumé
+              </a>
+            )}
           </div>
 
           <div className={`flex gap-3 ${style === "split" ? "" : "justify-center"}`}>

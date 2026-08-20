@@ -3,7 +3,20 @@ import jwt from "jsonwebtoken";
 import crypto from "crypto";
 import { db } from "./db.js";
 
-const JWT_SECRET = process.env.JWT_SECRET || "dev-only-insecure-secret-change-in-production";
+const DEV_SECRET = "dev-only-insecure-secret-change-in-production";
+
+// Falling back to a hard-coded secret is fine for local dev but catastrophic
+// in production: anyone who has read this repo could mint a valid session
+// token for any account. Fail loudly at startup rather than serving traffic
+// with forgeable logins.
+if (process.env.NODE_ENV === "production" && (!process.env.JWT_SECRET || process.env.JWT_SECRET === DEV_SECRET)) {
+  throw new Error(
+    "JWT_SECRET must be set to a long random value in production. " +
+      "The development fallback is public knowledge and would let anyone forge a login."
+  );
+}
+
+const JWT_SECRET = process.env.JWT_SECRET || DEV_SECRET;
 const TOKEN_EXPIRY = "30d";
 
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

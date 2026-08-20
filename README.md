@@ -1,8 +1,8 @@
 # Portfolio Builder
 
-A no-code portfolio builder: an **Editor** (10 tabs of structured content + theme controls), a **Live Preview** that updates instantly with a device-size toggle and a **Preview as Visitor** button, and a **Share** flow that publishes a snapshot to a shareable link with a QR code, visibility controls, and password protection.
+A no-code portfolio builder: an **Editor** (11 tabs of structured content + theme controls), a **Live Preview** that updates instantly with a device-size toggle and a **Preview as Visitor** button, an **AI Video** generator that narrates your portfolio and records it to a downloadable MP4, and a **Share** flow that publishes to a real database-backed link with a QR code, visibility controls, and password protection.
 
-This started as a no-backend MVP (React SPA, `localStorage` only) and now has a **real local backend** (`server/`: Express + SQLite) providing accounts and a `portfolios` table — see "Accounts & backend" below. The Editor/Share UI itself still runs on `localStorage` as described in this README; wiring it to save/publish through the new backend (instead of the old localStorage-only publish flow) is the next step, not yet done.
+This started as a no-backend MVP (React SPA, `localStorage` only). It now has a **real backend** (`server/`: Express + SQLite) with accounts, password reset, email verification, and a `portfolios` table — and the Editor's publish flow is wired through it, so **share links work across devices and browsers**.
 
 > **`legacy-static/`** holds an earlier, separate deliverable: a hand-built 9-page static HTML/CSS/JS portfolio (no editor, hardcoded content). It's kept here for reference only — it doesn't share any code with the app in `src/` and isn't part of the Vite build. Open `legacy-static/index.html` directly in a browser to view it.
 
@@ -10,107 +10,182 @@ This started as a no-backend MVP (React SPA, `localStorage` only) and now has a 
 
 ```bash
 npm install
-npm run dev
+npm run dev:all
 ```
 
-Open the printed local URL. `/editor` now requires logging in — you'll be redirected to `/register` to create an account first (see "Accounts & backend" below for what running the backend requires).
+`dev:all` runs both halves — you want this. Open the printed Vite URL; `/editor` requires an account, so you'll be redirected to `/register` first.
 
 ```bash
-npm run dev:all    # runs the Vite frontend AND the Express+SQLite backend together
+npm run dev:all     # Vite frontend + Express/SQLite backend together (what you normally want)
 npm run dev         # frontend only
 npm run dev:server  # backend only (http://localhost:4000)
-npm run build        # production build to dist/
-npm run preview       # serve the production build locally
+npm run build       # production build to dist/
+npm run preview     # serve the production build locally
+npm test            # vitest run — 130 tests across 11 files
 ```
+
+No configuration is needed for local dev: the SQLite file is auto-created and safe defaults cover every environment variable. See `.env.example` for what to set before deploying.
 
 ## Accounts & backend
 
-`server/` is a small Express API with a SQLite database (`server/data.sqlite`, auto-created, gitignored) providing:
+`server/` is an Express API over SQLite (`server/data.sqlite`, auto-created, gitignored). `server/app.js` builds the app and `server/index.js` only binds the port, so tests can import the app without starting a server.
 
-- `POST /api/auth/register` / `POST /api/auth/login` — bcrypt-hashed passwords, JWT session tokens (30-day expiry). Validation rules (enforced both client-side in `LoginPage.jsx`/`RegisterPage.jsx` for instant feedback, and server-side in `server/auth.js` as the source of truth): name required, valid email format, password ≥8 characters with at least one letter and one number, duplicate emails rejected.
-- `GET /api/auth/me` — returns the logged-in user for a valid token.
-- `GET/PUT /api/portfolios/mine` (auth required) and `GET /api/portfolios/by-slug/:slug` + `POST /api/portfolios/by-slug/:slug/unlock` (public) — a real `portfolios` table keyed by user, with slug-based lookup and server-side password gating (the password is never sent to the client for protected portfolios — only after a correct `/unlock` call).
+**Auth** (`/api/auth`) — bcrypt-hashed passwords, JWT session tokens (30-day expiry), with a `token_version` column on each user that `requireAuth` checks on every request — logging out, changing your password, or completing a reset bumps it and instantly invalidates every token issued before that point:
 
-The frontend's `useAuthStore.js` persists the JWT to `localStorage` and `/editor` is wrapped in `RequireAuth` (`src/components/auth/RequireAuth.jsx`), so an unauthenticated visit redirects to `/login`.
+| Endpoint | What it does |
+|---|---|
+| `POST /register`, `POST /login`, `POST /logout` | Session lifecycle |
+| `GET /me` | The signed-in user for a valid token |
+| `POST /forgot-password`, `POST /reset-password` | Token-based reset |
+| `POST /verify-email`, `POST /resend-verification` | Email verification |
+| `POST /change-password` | Requires the current password |
+| `DELETE /me` | Deletes the account and its portfolio, password-confirmed |
 
-**Not wired up yet:** the Editor's Save/Export and the Share modal's Publish still operate the same way described in "How data flows" below (pure `localStorage`, no network calls) — they don't yet call the `/api/portfolios/*` routes above. That's the natural next step once you're ready (it would also finally fix the cross-device share-link limitation noted below, since a link could point at a real database row instead of local-only data).
+Validation rules are enforced twice — client-side in `LoginPage.jsx`/`RegisterPage.jsx` for instant feedback, and server-side in `server/auth.js` as the source of truth: name required, valid email format, password ≥8 characters with at least one letter and one number, duplicate emails rejected.
 
-**Moving to a hosted database:** `server/db.js` currently opens `better-sqlite3` against a local file path from `DATABASE_URL` (or `server/data.sqlite` by default) — it does not speak Postgres. To deploy against a free hosted database (e.g. Supabase), swap `better-sqlite3` for a Postgres client (e.g. `pg` or `postgres.js`) and update the `CREATE TABLE`/query syntax in `server/db.js` and `server/routes/*.js` accordingly (SQLite and Postgres SQL differ slightly — e.g. `AUTOINCREMENT` vs `SERIAL`). `JWT_SECRET` must also be set to a real secret in production — see `.env.example`.
+**Rate limiting** (`server/rateLimit.js`) — separate 15-minute counters per purpose rather than one shared limiter, so a burst of password-reset requests can't lock someone out of logging in. Login is tightest (20/window) as the classic credential-stuffing target; register and the token flows get 30.
+
+**Portfolios** (`/api/portfolios`) — `GET/PUT/DELETE /mine` (auth required), plus public `GET /by-slug/:slug` and `POST /by-slug/:slug/unlock`. Password gating is enforced server-side: the password is never sent to the client for a protected portfolio, only the content after a correct `/unlock` call.
+
+> **No email provider is wired up** — by design, so the app never requires connecting a third-party mail service. Password-reset and verification links are printed to the API server's console instead (`deliverLink()` in `server/routes/auth.js`). Copy the link from the terminal to complete either flow locally, and swap in a real provider there before relying on it in production.
+
+**Moving to a hosted database:** `server/db.js` opens `better-sqlite3` against a local file path from `DATABASE_URL` (default `server/data.sqlite`) — it does not speak Postgres. To deploy against a hosted database (e.g. Supabase), swap `better-sqlite3` for a Postgres client (`pg` or `postgres.js`) and update the `CREATE TABLE`/query syntax in `server/db.js` and `server/routes/*.js` (SQLite and Postgres SQL differ — e.g. `AUTOINCREMENT` vs `SERIAL`). `JWT_SECRET` must also be set to a real secret in production; the code falls back to a well-known insecure default if unset.
 
 ## Routes
 
 | Route | What it is |
 |---|---|
-| `#/editor` | Editor (left: tabbed form) + Live Preview (right, with Desktop/Tablet/Mobile toggle) |
+| `#/editor` | Editor (left: tabbed form) + Live Preview (right, with Desktop/Tablet/Mobile toggle). Auth required. |
 | `#/preview` | Full-screen "Preview as Visitor" view of your **current draft** (opens in a new tab from the editor) |
 | `#/p/:slug` | The **published** portfolio at your share link |
+| `#/login`, `#/register` | Account entry |
+| `#/forgot-password`, `#/reset-password/:token` | Password reset |
+| `#/verify-email/:token` | Email verification |
 
-Routing uses a hash (`#/...`) so the whole app can be deployed as static files with zero server config.
-
-## Editor/Preview split
-
-The divider between the Editor and Preview panes (desktop only) is draggable — grab it to resize either side. The width is saved to `localStorage` and restored next time you open the editor.
-
-## Resume auto-fill (Profile tab → "✨ Auto-fill from resume")
-
-Upload a PDF resume and it's parsed **entirely client-side** — no AI, no API key, no upload to any server, so it works the same on every machine you share this app with. Under the hood: [`pdf.js`](https://mozilla.github.io/pdf.js/) extracts the raw text and font sizes in-browser, then keyword/regex heuristics guess your name (largest text near the top), email, phone, LinkedIn/GitHub/website, skills (matched against a curated keyword list), and rough experience/education entries from date-range patterns.
-
-This is heuristic text-matching, not language understanding — it's reliable for contact info and skill keywords, but experience/education parsing is approximate (arbitrary resume layouts confuse it). That's why the review screen shows every detected item with a checkbox: profile fields and skills are pre-checked, experience/education entries are **unchecked by default** and meant to be spot-checked before you click "Apply selected to portfolio." Nothing is written to your portfolio without you reviewing it first.
-
-`pdfjs-dist` (and its worker, ~1.3MB) is only downloaded the first time someone opens this modal — it's not part of the app's initial page load.
-
-A smarter, in-browser-LLM-based version of this (e.g. via WebLLM) is a possible future upgrade, but it would require a large model download (500MB–2GB) and only works on WebGPU-capable browsers — heuristics were chosen instead so the feature works for everyone you share the app with.
-
-## How data flows
-
-- Everything you type in the Editor lives in a Zustand store (`src/store/usePortfolioStore.js`) and is auto-persisted to `localStorage` under `portfolio-builder:draft` on every change — that's your **draft**.
-- **Preview as Visitor** (`#/preview`) renders that same draft full-screen with all editor chrome hidden, so you can see exactly what a visitor would see before publishing.
-- **Publish** (Share button → Publish) snapshots the current draft into `localStorage` under `portfolio-builder:published:<slug>`, independent from the draft. Editing afterward doesn't change the published version until you hit Publish/Republish again.
-- The share link (`#/p/<slug>`) reads that published snapshot, applies visibility rules (public / private / password-gated), and increments a view counter stored alongside it.
-
-**Known MVP limitation:** because there's no backend, published links only resolve on the same browser/device they were published from — this is the tradeoff called out explicitly in the brief for the no-auth MVP path. For a link that works anywhere, use **Export JSON** (top bar) to hand off the file, or move to the Next.js + Supabase path in the original spec for real multi-device hosting.
+Routing uses a hash (`#/...`) so the frontend can be deployed as static files with zero rewrite rules.
 
 ## Editor tabs
 
-Profile · About Me · Skills (categories + proficiency sliders + "Currently Learning") · Experience (drag-to-reorder) · Projects (drag-to-reorder, category-filtered case studies) · Education & Certifications · Testimonials · Blog (toggleable) · Contact Settings (toggle visible fields, form delivery method, FAQ) · Theme & Design (palette presets, custom colors, fonts, hero/project/experience layout variants, animation level, custom CSS).
+Profile · About Me · Skills (categories + proficiency sliders + "Currently Learning") · Experience (drag-to-reorder) · Projects (drag-to-reorder, category-filtered case studies) · Education & Certifications · Testimonials · Blog (toggleable) · Contact Settings (toggle visible fields, form delivery method, FAQ) · Theme & Design (palette presets, custom colors, fonts, hero/project/experience layout variants, animation level, custom CSS) · **🎬 AI Video**.
 
-Image fields accept a pasted URL or a local file upload (stored as a data URL — keep uploads under 2MB since everything lives in `localStorage`).
+Image fields accept a pasted URL or a local file upload (stored as a data URL — keep uploads under 2MB).
+
+## AI Video
+
+The AI Video tab turns the portfolio you've already filled in into a narrated video, entirely in the browser. Pipeline:
+
+1. **Scene plan** (`services/video/sceneBuilder.js`) — deterministic, no AI. It picks *which* real facts appear and how many narration words each scene gets, weighted by the audience you choose (a recruiter plan front-loads experience; a client plan front-loads projects) and fitted to a length target: Short (30–45s), Standard (60–90s), or Detailed (2–3 min).
+2. **Narration** (`services/ai/` + `services/video/aiWriter.js`) — an AI provider phrases the facts the planner selected. Scene duration is derived from the resulting word count, so timing always matches what's actually spoken.
+3. **Playback and export** (`services/video/player.js`, `sceneRenderer.js`, `captions.js`, `tts.js`, `exportVideo.js`) — scenes are drawn to a 1280×720 canvas, narrated with the browser's built-in `SpeechSynthesis`, captioned from the known script (no speech recognition needed), and recorded via `MediaRecorder`.
+
+### AI providers
+
+Selected automatically in this order, and swappable in the tab. **Nothing here ever requires payment or a mandatory API key.**
+
+| Provider | Setup | Notes |
+|---|---|---|
+| **Ollama** (preferred) | Run Ollama locally; the tab lists your installed models | A genuine LLM that costs nothing, needs no account, and never sends your portfolio off the machine |
+| **Gemini** | Paste your own API key (stored in `localStorage`) | Optional cloud fallback. Never called unless you supply a key. Currently the only provider that writes non-English narration |
+| **Basic (offline)** | Always available | Deterministic template writer — instant, no network, no key. Also the per-scene fallback whenever a model errors out |
+
+### The grounding guard
+
+The hard rule is that the AI may **rephrase** your portfolio, never **add** to it. A prompt instruction isn't enough — small local models will happily turn an empty location field into "Based in the United States". So `services/ai/factGuard.js` checks generated text against the facts it was given and throws if the model introduced a proper noun or number the portfolio doesn't contain; that scene is then rewritten by the offline template writer, which can only restate real fields. Empty fields are stripped from the brief entirely before a model sees them, so there's no blank left inviting a guess.
+
+The check is deliberately narrow — it flags proper nouns and digits (companies, titles, certifications, statistics, dates) rather than trying to judge vague adjectives, so legitimate rephrasing survives.
+
+### Export
+
+`recordScenePlan()` prefers **MP4 (H.264 + AAC)** since that's what editors, phones, and upload forms accept without conversion, falling back through WebM variants based on what the browser's `MediaRecorder` supports; the download filename always matches what was actually recorded. Narration audio is included if the browser supports tab-audio capture via `getDisplayMedia` and you grant permission — if not, the export still succeeds without an audio track, and the burned-in captions still carry the script.
+
+## Editor/Preview split
+
+The divider between the Editor and Preview panes (desktop only) is draggable — grab it to resize either side. The width is saved to `localStorage` and restored next time.
+
+## Resume auto-fill (Profile tab → "✨ Auto-fill from resume")
+
+Upload a PDF resume and it's parsed **entirely client-side** — no AI, no API key, no upload to any server. [`pdf.js`](https://mozilla.github.io/pdf.js/) extracts raw text and font sizes in-browser, then keyword/regex heuristics guess your name (largest text near the top), email, phone, LinkedIn/GitHub/website, skills (matched against a curated keyword list), and rough experience/education entries from date-range patterns.
+
+This is heuristic text-matching, not language understanding — reliable for contact info and skill keywords, approximate for experience/education (arbitrary resume layouts confuse it). That's why the review screen shows every detected item with a checkbox: profile fields and skills are pre-checked, experience/education entries are **unchecked by default** and meant to be spot-checked before you click "Apply selected to portfolio."
+
+`pdfjs-dist` (and its worker, ~1.3MB) is only downloaded the first time someone opens this modal — it's not part of the initial page load.
+
+## How data flows
+
+- Everything you type lives in a Zustand store (`src/store/usePortfolioStore.js`), auto-persisted to `localStorage` under `portfolio-builder:draft` on every change — that's your **draft**.
+- On sign-in and editor mount, `loadFromServer()` pulls your last-saved server copy. It only overwrites the local draft **if the server's copy is newer** — a blind overwrite here would silently discard any edit made since the last publish, on every page refresh.
+- **Preview as Visitor** (`#/preview`) renders the draft full-screen with all editor chrome hidden.
+- **Publish** (Share → Publish) calls `PUT /api/portfolios/mine`, writing a snapshot to your row with its slug, visibility, and optional password. Editing afterward doesn't change the published version until you publish again.
+- The share link (`#/p/<slug>`) fetches that row from the API, applies visibility rules (public / private / password-gated, enforced server-side), and increments a view counter.
+
+Custom CSS from the Theme tab is passed through `utils/sanitizeCss.js` before being injected into a rendered portfolio, and the whole app is wrapped in an `ErrorBoundary` so a render failure in one section doesn't blank the page.
 
 ## Theme system
 
-`theme.primary` / `theme.secondary` drive every gradient and accent across the rendered portfolio. `theme.mode` (dark / light / auto) sets the default; visitors can still flip the navbar toggle locally. `theme.animationLevel` (full / subtle / none) controls scroll-reveal and bar-fill animation intensity, and `none` also fully satisfies `prefers-reduced-motion` users. Fonts are loaded from Google Fonts dynamically based on your tab selections.
+`theme.primary` / `theme.secondary` drive every gradient and accent across the rendered portfolio. `theme.mode` (dark / light / auto) sets the default; visitors can still flip the navbar toggle locally. `theme.animationLevel` (full / subtle / none) controls scroll-reveal and bar-fill intensity, and `none` also fully satisfies `prefers-reduced-motion` users. Fonts load from Google Fonts based on your tab selections.
+
+## Tests
+
+```bash
+npm test
+```
+
+130 tests across 11 files (Vitest, plus Supertest for the API):
+
+- **API integration** — `server/routes/auth.integration.test.js`, `portfolio.integration.test.js` (real HTTP against the Express app, real SQLite)
+- **Auth units** — `server/auth.test.js` (hashing, JWT, validation rules)
+- **AI** — `factGuard.test.js` (the grounding guard), `LocalProvider.test.js` (word-cap sentence trimming)
+- **Video** — `sceneBuilder.test.js`, `timing.test.js`, `exportFormat.test.js`, `player.test.js`
+- **Utils** — `slug.test.js`, `sanitizeCss.test.js`
 
 ## Project structure
 
 ```
 server/
-  index.js           Express app entrypoint (CORS, JSON body parsing, mounts routers)
-  db.js                 SQLite connection + schema (users, portfolios tables)
-  auth.js               Password hashing, JWT signing/verification, validation rules, requireAuth middleware
+  index.js              Binds the port (nothing else)
+  app.js                Express app: CORS, JSON body parsing, mounts routers — importable by tests
+  db.js                 SQLite connection + schema (users, portfolios)
+  auth.js               Password hashing, JWT signing/verification, validation, requireAuth middleware
+  rateLimit.js          Per-purpose rate limiters (login / register / token flows)
   routes/
-    auth.js               /api/auth/register, /login, /me
+    auth.js               /api/auth/* — register, login, logout, me, reset, verify, change-password, delete
     portfolio.js          /api/portfolios/mine (auth), /by-slug/:slug + /unlock (public)
 src/
   components/
-    auth/            RequireAuth (route guard)
-    editor/         Tab* components, PreviewPane, TabShell
-    portfolio/       Rendered sections (Hero, About, Skills, Projects, ...) + ThemeContext
-    share/            ShareModal, PasswordGate
-    ui/                 Reusable inputs: Field, Button, Modal, Toggle, TagInput, ReorderList, ImageUpload, ColorPicker
-  data/defaults.js    Default seeded portfolio content (persona used for placeholders)
-  hooks/                 useTyping, useActiveSection, useTheme, useScrolledState
-  pages/                 EditorPage, PreviewPage, SharePage, LoginPage, RegisterPage
+    auth/               RequireAuth (route guard), AccountModal
+    editor/             Tab* components (incl. TabAIVideo), PreviewPane, TabShell, ResumeImportModal
+    portfolio/          Rendered sections (Hero, About, Skills, Projects, ...) + ThemeContext
+    share/              ShareModal, PasswordGate
+    ui/                 Field, Button, Modal, Toggle, TagInput, ReorderList, ImageUpload, ColorPicker, StringListManager
+    ErrorBoundary.jsx
+  services/
+    ai/                 AIProvider (contract), LocalProvider, OllamaProvider, GeminiProvider, factGuard, index (selection)
+    video/              sceneBuilder, aiWriter, sceneRenderer, player, tts, captions, exportVideo
+  data/                 defaults.js (seeded placeholder content), skillKeywords.js
+  hooks/                useTyping, useActiveSection, useTheme
+  pages/                EditorPage, PreviewPage, SharePage, Login/Register, Forgot/ResetPassword, VerifyEmail
   store/
-    usePortfolioStore.js   Zustand + localStorage persistence for the portfolio draft, publish/unpublish
-    useAuthStore.js          Zustand + localStorage persistence for the JWT/user session
-  utils/                   uid, slug, exportImport, api.js (fetch wrapper for the backend)
-legacy-static/            Earlier standalone static-HTML portfolio (reference only, not built by Vite)
+    usePortfolioStore.js  Zustand draft + localStorage persistence + server save/load
+    useAuthStore.js       Zustand JWT/user session
+  utils/                uid, slug, exportImport, parseResume, sanitizeCss, api.js (fetch wrapper)
+legacy-static/          Earlier standalone static-HTML portfolio (reference only, not built by Vite)
 ```
 
 ## Deploying
 
-Static build (`npm run build` → `dist/`) — drag-and-drop `dist/` into Netlify or Vercel, or push to GitHub Pages. No rewrite rules needed since routing is hash-based. (This only builds the app in `src/`; `legacy-static/` is unaffected and would need to be deployed separately if you ever want it live.)
+The frontend is a static build (`npm run build` → `dist/`) — deploy to Netlify, Vercel, or GitHub Pages with no rewrite rules, since routing is hash-based. The API needs a Node host and a writable disk for SQLite (or the Postgres swap described above). Before deploying, set in `.env`:
 
-## Not implemented in this MVP
+- `JWT_SECRET` — a long random string (**required**; there's an insecure dev fallback otherwise)
+- `CORS_ORIGIN` — your real frontend origin(s); the API rejects anything not listed
+- `VITE_API_URL` — where the browser should reach the API, if it isn't `localhost:4000`
+- `FRONTEND_URL` — the base for reset/verification links
 
-Per the scope agreed for this pass (no cloud credentials available): user accounts/auth, a real database, cross-device share links, and server-rendered SEO for the share page. The original spec's "Full SaaS" path (Next.js + Supabase + NextAuth) covers all of these if/when you're ready to stand up those services.
+(`legacy-static/` isn't part of the Vite build and would need deploying separately.)
+
+## Known gaps
+
+- **No email delivery.** Reset and verification links go to the API server's console. Wire a provider into `deliverLink()` in `server/routes/auth.js`.
+- **SQLite only.** `server/db.js` doesn't speak Postgres — see "Moving to a hosted database" above.
+- **No server-rendered SEO** for share pages. The app is a hash-routed SPA, so `#/p/:slug` won't produce link previews or index well; that needs the SSR path (e.g. Next.js) from the original spec.
+- **Non-English AI narration requires a Gemini key.** The offline writer only produces English phrasing, and the tab warns you when your language choice can't be honoured by the active provider.
+- **Video export depends on browser support.** `MediaRecorder` MP4 muxing and `getDisplayMedia` tab-audio capture vary by browser; the export degrades to WebM and/or silent video rather than failing.
