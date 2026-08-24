@@ -190,14 +190,14 @@ export function ResumeImportModal({ open, onClose }) {
                     className="mt-0.5 accent-cyan-400"
                   />
                   <span className="min-w-0">
-                    <span className="block text-slate-500 text-[11px]">{label}</span>
+                    <span className="block text-slate-400 text-[11px]">{label}</span>
                     <span className="block text-slate-200 truncate">{draft[key]}</span>
                   </span>
                 </label>
               ))}
             </div>
             {PROFILE_FIELDS.every(([key]) => !draft[key]) && (
-              <p className="text-xs text-slate-500">No contact fields detected.</p>
+              <p className="text-xs text-slate-400">No contact fields detected.</p>
             )}
           </div>
 
@@ -214,7 +214,7 @@ export function ResumeImportModal({ open, onClose }) {
                     className={`px-3 py-1 rounded-full text-xs border transition ${
                       included.skills?.[s]
                         ? "bg-cyan-400/15 border-cyan-400 text-cyan-300"
-                        : "border-slate-700 text-slate-500 line-through"
+                        : "border-slate-700 text-slate-400 line-through"
                     }`}
                   >
                     {s}
@@ -229,7 +229,7 @@ export function ResumeImportModal({ open, onClose }) {
               <h3 className="text-xs uppercase tracking-wide text-amber-400 mb-1">
                 Experience entries — low confidence, unchecked by default
               </h3>
-              <p className="text-[11px] text-slate-500 mb-3">
+              <p className="text-[11px] text-slate-400 mb-3">
                 Layout parsing is approximate. Check the box only for entries that look correct — you can fix details after import in the Experience tab.
               </p>
               <div className="space-y-2">
@@ -246,7 +246,7 @@ export function ResumeImportModal({ open, onClose }) {
                         {exp.role}
                         {exp.company && ` — ${exp.company}`}
                       </span>
-                      <span className="block text-slate-500 text-xs">{exp.duration}</span>
+                      <span className="block text-slate-400 text-xs">{exp.duration}</span>
                       {exp.description && <span className="block text-slate-400 text-xs mt-1 line-clamp-2">{exp.description}</span>}
                     </span>
                   </label>
@@ -271,7 +271,7 @@ export function ResumeImportModal({ open, onClose }) {
                     />
                     <span className="min-w-0">
                       <span className="block text-slate-200 font-medium">{edu.degree || "Degree"}</span>
-                      <span className="block text-slate-500 text-xs">
+                      <span className="block text-slate-400 text-xs">
                         {edu.institution} {edu.year && `· ${edu.year}`}
                       </span>
                     </span>

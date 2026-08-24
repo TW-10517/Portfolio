@@ -14,7 +14,18 @@ import { Blog } from "./Blog.jsx";
 import { Contact } from "./Contact.jsx";
 import { Footer } from "./Footer.jsx";
 
-export function PortfolioView({ data, scrollRootEl, showBrand = true }) {
+// Standalone (share page, visitor preview) the portfolio owns the document,
+// so its sections belong in <main>. Embedded in the editor's preview pane the
+// page already has a <main> and may only have one — but a plain <div> would
+// drop every section out of a landmark and let Hero's <header> register as a
+// second banner. A named <section> is a landmark in its own right and, like
+// <main>, stops a nested <header> from counting as a banner.
+function Sections({ landmark, children }) {
+  if (landmark) return <main>{children}</main>;
+  return <section aria-label="Portfolio preview">{children}</section>;
+}
+
+export function PortfolioView({ data, scrollRootEl, showBrand = true, landmark = true }) {
   const initialMode = useEffectiveMode(data.theme.mode);
   const [mode, setMode] = useState(initialMode);
   useEffect(() => setMode(initialMode), [initialMode]);
@@ -50,15 +61,26 @@ export function PortfolioView({ data, scrollRootEl, showBrand = true }) {
       >
         {safeCustomCss && <style>{safeCustomCss}</style>}
         <Navbar scrollRootEl={scrollRootEl} />
-        <Hero />
-        <About />
-        <Skills />
-        <Experience />
-        <Projects />
-        <Education />
-        <Testimonials />
-        <Blog />
-        <Contact />
+        {/* Every section used to sit outside any landmark, so assistive tech
+            had no way to skip the nav and jump to the content. Wrapping them
+            also stops Hero's <header> from registering as a second banner
+            alongside the navbar — a <header> only counts as one when it isn't
+            nested inside <main>.
+
+            Inside the editor's preview pane this renders as a plain <div>:
+            the portfolio is embedded in a page that already has its own
+            <main>, and a document may only have one. */}
+        <Sections landmark={landmark}>
+          <Hero />
+          <About />
+          <Skills />
+          <Experience />
+          <Projects />
+          <Education />
+          <Testimonials />
+          <Blog />
+          <Contact />
+        </Sections>
         <Footer scrollRootEl={scrollRootEl} showBrand={showBrand} />
       </div>
     </PortfolioThemeContext.Provider>

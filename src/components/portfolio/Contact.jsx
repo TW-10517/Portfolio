@@ -2,6 +2,7 @@ import { useState } from "react";
 import { usePortfolioTheme } from "./ThemeContext.jsx";
 import { Reveal } from "./Reveal.jsx";
 import { SectionTag } from "./SectionTag.jsx";
+import { sanitizeUrl } from "../../utils/sanitizeUrl.js";
 
 function FaqItem({ faq, open, onToggle, palette, primary }) {
   return (
@@ -135,14 +136,14 @@ export function Contact() {
             {contact.showSocial && (
               <div className="flex gap-2 pt-2">
                 {Object.entries(profile.social || {}).filter(([, v]) => v).map(([key, url]) => (
-                  <a key={key} href={url} target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full border flex items-center justify-center text-xs uppercase" style={{ borderColor: palette.border, color: palette.textDim }}>
+                  <a key={key} href={sanitizeUrl(url)} target="_blank" rel="noopener noreferrer" className="w-10 h-10 rounded-full border flex items-center justify-center text-xs uppercase" style={{ borderColor: palette.border, color: palette.textDim }}>
                     {key.slice(0, 2)}
                   </a>
                 ))}
               </div>
             )}
             {contact.calendlyUrl && (
-              <a href={contact.calendlyUrl} target="_blank" rel="noopener noreferrer" className="inline-block mt-2 px-5 py-2.5 rounded-full text-sm border" style={{ borderColor: palette.border, color: palette.text }}>
+              <a href={sanitizeUrl(contact.calendlyUrl)} target="_blank" rel="noopener noreferrer" className="inline-block mt-2 px-5 py-2.5 rounded-full text-sm border" style={{ borderColor: palette.border, color: palette.text }}>
                 Book a Meeting
               </a>
             )}

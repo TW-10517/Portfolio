@@ -1,6 +1,7 @@
 import { usePortfolioTheme } from "./ThemeContext.jsx";
 import { Reveal } from "./Reveal.jsx";
 import { SectionTag } from "./SectionTag.jsx";
+import { sanitizeUrl } from "../../utils/sanitizeUrl.js";
 
 export function Education() {
   const { data, palette, primary, animationLevel } = usePortfolioTheme();
@@ -37,8 +38,8 @@ export function Education() {
               {certifications.map((c) => (
                 <a
                   key={c.id}
-                  href={c.url || undefined}
-                  target={c.url ? "_blank" : undefined}
+                  href={sanitizeUrl(c.url)}
+                  target={sanitizeUrl(c.url) ? "_blank" : undefined}
                   rel="noopener noreferrer"
                   className="rounded-2xl border p-5 text-center block"
                   style={{ borderColor: palette.border, background: palette.surface }}

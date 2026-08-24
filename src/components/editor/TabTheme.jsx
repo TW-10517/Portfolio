@@ -58,7 +58,7 @@ export function TabTheme() {
           </Select>
         </Field>
       </div>
-      <p className="text-xs text-slate-500 -mt-2" style={{ fontFamily: theme.headingFont }}>
+      <p className="text-xs text-slate-400 -mt-2" style={{ fontFamily: theme.headingFont }}>
         Preview: The quick brown fox jumps.
       </p>
 
@@ -97,7 +97,7 @@ export function TabTheme() {
       </Field>
 
       <SubHeading>Custom CSS (advanced)</SubHeading>
-      <p className="text-[11px] text-slate-500 -mt-2 mb-2">
+      <p className="text-[11px] text-slate-400 -mt-2 mb-2">
         Applies to your published page. For visitors' safety, <code>url()</code>, <code>@import</code>, and fixed-position overlays are stripped.
       </p>
       <TextArea

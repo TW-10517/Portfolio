@@ -24,7 +24,7 @@ export function PreviewPane() {
               key={key}
               onClick={() => setDevice(key)}
               title={d.label}
-              className={`px-2.5 py-1.5 rounded-md text-sm transition ${device === key ? "bg-slate-800 text-white" : "text-slate-500 hover:text-slate-300"}`}
+              className={`px-2.5 py-1.5 rounded-md text-sm transition ${device === key ? "bg-slate-800 text-white" : "text-slate-400 hover:text-slate-300"}`}
             >
               {d.icon}
             </button>
@@ -47,7 +47,7 @@ export function PreviewPane() {
             height: device === "desktop" ? "100%" : "82vh",
           }}
         >
-          <PortfolioView data={data} scrollRootEl={scrollEl} />
+          <PortfolioView data={data} scrollRootEl={scrollEl} landmark={false} />
         </div>
       </div>
     </div>

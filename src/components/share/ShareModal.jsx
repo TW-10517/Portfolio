@@ -17,6 +17,8 @@ export function ShareModal({ open, onClose }) {
   const [password, setPassword] = useState("");
   const [qr, setQr] = useState("");
   const [published, setPublished] = useState(false);
+  const [views, setViews] = useState(data.meta.views ?? 0);
+  const [checking, setChecking] = useState(false);
   const [copied, setCopied] = useState(false);
   const [saving, setSaving] = useState(false);
   const [unpublishing, setUnpublishing] = useState(false);
@@ -29,6 +31,35 @@ export function ShareModal({ open, onClose }) {
     QRCode.toDataURL(shareUrl, { margin: 1, width: 220, color: { dark: "#0b0c12", light: "#ffffff" } }).then(setQr);
   }, [published, shareUrl]);
 
+  // `published` used to start false on every mount, so reopening this modal on
+  // an already-published portfolio hid the share link, QR code and social
+  // buttons, and offered "Publish" instead of "Republish" — the only way back
+  // to your own link was to publish again. Asking the server on open also
+  // refreshes the view count, which otherwise only changed on publish.
+  useEffect(() => {
+    if (!open || !token) return;
+    let cancelled = false;
+    setChecking(true);
+    api
+      .getMine(token)
+      .then(({ portfolio }) => {
+        if (cancelled || !portfolio) return;
+        setPublished(true);
+        setSlug(portfolio.slug);
+        setVisibility(portfolio.visibility);
+        setViews(portfolio.views ?? 0);
+      })
+      // A failed check just leaves the modal in its unpublished state; the
+      // publish attempt itself will surface any real problem.
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setChecking(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, token]);
+
   const doPublish = async () => {
     setError("");
     setSaving(true);
@@ -36,6 +67,7 @@ export function ShareModal({ open, onClose }) {
       const portfolio = await saveToServer(token, { slug: slugify(slug) || slugify(data.profile.name) || "my-portfolio", visibility, password });
       setSlug(portfolio.slug);
       setPassword(""); // never keep the plaintext password in memory/UI longer than the request
+      setViews(portfolio.views ?? 0);
       setPublished(true);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't publish right now. Please try again.");
@@ -51,6 +83,7 @@ export function ShareModal({ open, onClose }) {
     try {
       await api.deleteMine(token);
       setPublished(false);
+      setViews(0);
       setQr("");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't unpublish right now. Please try again.");
@@ -85,7 +118,7 @@ export function ShareModal({ open, onClose }) {
       <div className="grid sm:grid-cols-2 gap-3 mb-4">
         <Field label="Custom slug">
           <div className="flex items-center rounded-lg bg-slate-900 border border-slate-700 overflow-hidden focus-within:border-cyan-400">
-            <span className="pl-3 text-xs text-slate-500 shrink-0">.../p/</span>
+            <span className="pl-3 text-xs text-slate-400 shrink-0">.../p/</span>
             <input
               value={slug}
               onChange={(e) => setSlug(e.target.value)}
@@ -110,8 +143,8 @@ export function ShareModal({ open, onClose }) {
 
       {error && <p className="text-sm text-red-400 mb-3">{error}</p>}
       <div className="flex items-center gap-2 mb-6">
-        <Button onClick={doPublish} disabled={saving || unpublishing}>
-          {saving ? "Publishing…" : published ? "Republish" : "Publish"}
+        <Button onClick={doPublish} disabled={saving || unpublishing || checking}>
+          {saving ? "Publishing…" : checking ? "Checking…" : published ? "Republish" : "Publish"}
         </Button>
         {published && (
           <Button variant="danger" onClick={doUnpublish} disabled={saving || unpublishing}>
@@ -122,6 +155,14 @@ export function ShareModal({ open, onClose }) {
 
       {published && (
         <div className="border-t border-slate-800 pt-5 space-y-5">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-slate-400">
+              <span className="text-white font-semibold">{views.toLocaleString()}</span>{" "}
+              {views === 1 ? "view" : "views"}
+            </p>
+            <p className="text-xs text-slate-400">Counted on each visit to your public link.</p>
+          </div>
+
           <div className="flex items-center gap-2">
             <input readOnly value={shareUrl} className="flex-1 rounded-lg bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-slate-300" />
             <Button variant="subtle" size="sm" onClick={copyLink}>

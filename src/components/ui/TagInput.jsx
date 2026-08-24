@@ -38,7 +38,7 @@ export function TagInput({ tags, onChange, placeholder = "Add and press Enter" }
         }}
         onBlur={add}
         placeholder={placeholder}
-        className="w-full bg-transparent text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none px-1"
+        className="w-full bg-transparent text-sm text-slate-100 placeholder:text-slate-400 focus:outline-none px-1"
       />
     </div>
   );

@@ -3,6 +3,7 @@ import { usePortfolioTheme } from "./ThemeContext.jsx";
 import { Reveal } from "./Reveal.jsx";
 import { SectionTag } from "./SectionTag.jsx";
 import { Modal } from "../ui/Modal.jsx";
+import { sanitizeUrl } from "../../utils/sanitizeUrl.js";
 
 function ProjectCard({ project, palette, primary, onOpen }) {
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
@@ -116,12 +117,12 @@ export function Projects() {
             )}
             <div className="flex gap-3 mt-6">
               {selected.demoUrl && (
-                <a href={selected.demoUrl} target="_blank" rel="noopener noreferrer" className="px-5 py-2 rounded-full text-sm font-semibold bg-gradient-to-r from-cyan-400 to-violet-500 text-slate-950">
+                <a href={sanitizeUrl(selected.demoUrl)} target="_blank" rel="noopener noreferrer" className="px-5 py-2 rounded-full text-sm font-semibold bg-gradient-to-r from-cyan-400 to-violet-500 text-slate-950">
                   Live Demo
                 </a>
               )}
               {selected.repoUrl && (
-                <a href={selected.repoUrl} target="_blank" rel="noopener noreferrer" className="px-5 py-2 rounded-full text-sm font-semibold border border-slate-600 text-slate-200">
+                <a href={sanitizeUrl(selected.repoUrl)} target="_blank" rel="noopener noreferrer" className="px-5 py-2 rounded-full text-sm font-semibold border border-slate-600 text-slate-200">
                   Source
                 </a>
               )}

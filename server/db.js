@@ -30,6 +30,18 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_portfolios_user_id ON portfolios(user_id);
+
+  -- Rate-limit counters. express-rate-limit's default store keeps these in
+  -- process memory, so every restart handed attackers a fresh allowance and
+  -- nothing was shared between workers. Persisting them here costs one small
+  -- table and makes the limits mean what they say.
+  CREATE TABLE IF NOT EXISTS rate_limits (
+    key TEXT PRIMARY KEY,
+    hits INTEGER NOT NULL,
+    reset_at INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_rate_limits_reset_at ON rate_limits(reset_at);
 `);
 
 // Idempotent column migrations — SQLite has no "ADD COLUMN IF NOT EXISTS",

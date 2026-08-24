@@ -39,7 +39,7 @@ export function VerifyEmailPage() {
   }, [token, refreshUser]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950 px-4">
+    <main className="min-h-screen flex items-center justify-center bg-slate-950 px-4">
       <div className="w-full max-w-sm text-center">
         <div className="inline-flex items-center gap-2 text-white font-head font-bold text-lg mb-6">
           <span className="text-xl">🧩</span> Portfolio Builder
@@ -59,12 +59,12 @@ export function VerifyEmailPage() {
           <>
             <h1 className="text-2xl font-head font-bold text-white mb-2">Verification failed</h1>
             <p className="text-sm text-red-400 mb-6">{error}</p>
-            <Link to="/editor" className="text-cyan-400 hover:text-cyan-300 text-sm">
+            <Link to="/editor" className="text-cyan-400 underline hover:text-cyan-300 text-sm">
               ← Back to editor
             </Link>
           </>
         )}
       </div>
-    </div>
+    </main>
   );
 }

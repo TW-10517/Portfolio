@@ -2,6 +2,7 @@ import { useState } from "react";
 import { usePortfolioTheme } from "./ThemeContext.jsx";
 import { Reveal } from "./Reveal.jsx";
 import { SectionTag } from "./SectionTag.jsx";
+import { sanitizeUrl } from "../../utils/sanitizeUrl.js";
 
 export function Blog() {
   const { data, palette, primary, animationLevel } = usePortfolioTheme();
@@ -41,7 +42,7 @@ export function Blog() {
           {filtered.map((post, i) => (
             <Reveal key={post.id} animationLevel={animationLevel} delay={(i % 6) * 0.06}>
               <a
-                href={post.url || "#"}
+                href={sanitizeUrl(post.url) || "#"}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="block rounded-2xl overflow-hidden border"

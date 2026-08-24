@@ -1,24 +1,36 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { readImageFile } from "../../utils/exportImport.js";
 
 export function ImageUpload({ value, onChange, label = "Image", round }) {
   const fileRef = useRef(null);
+  const [busy, setBusy] = useState(false);
 
   const handleFile = async (e) => {
     const file = e.target.files?.[0];
+    // Clear the input up front so re-picking the same file still fires change.
+    e.target.value = "";
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      alert("Please choose an image under 2MB (stored locally in your browser).");
+    // The old 2MB limit rejected ordinary phone photos. Uploads are now
+    // downscaled on the way in, so the cap only needs to stop something
+    // absurd being decoded in the browser.
+    if (file.size > 12 * 1024 * 1024) {
+      alert("Please choose an image under 12MB.");
       return;
     }
-    const dataUrl = await readImageFile(file);
-    onChange(dataUrl);
+    setBusy(true);
+    try {
+      onChange(await readImageFile(file));
+    } catch {
+      alert("Sorry — that image couldn't be read. Try a different file.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <div className="flex items-center gap-3">
       <div
-        className={`w-14 h-14 shrink-0 bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center text-slate-500 text-xs ${round ? "rounded-full" : "rounded-lg"}`}
+        className={`w-14 h-14 shrink-0 bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center text-slate-400 text-xs ${round ? "rounded-full" : "rounded-lg"}`}
       >
         {value ? <img src={value} alt={label} className="w-full h-full object-cover" /> : "—"}
       </div>
@@ -34,12 +46,13 @@ export function ImageUpload({ value, onChange, label = "Image", round }) {
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="text-xs text-cyan-400 hover:text-cyan-300"
+            disabled={busy}
+            className="text-xs text-cyan-400 hover:text-cyan-300 disabled:text-slate-600"
           >
-            Upload file
+            {busy ? "Processing…" : "Upload file"}
           </button>
           {value && (
-            <button type="button" onClick={() => onChange("")} className="text-xs text-slate-500 hover:text-red-400">
+            <button type="button" onClick={() => onChange("")} className="text-xs text-slate-400 hover:text-red-400">
               Clear
             </button>
           )}

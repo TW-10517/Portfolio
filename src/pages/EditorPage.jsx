@@ -143,13 +143,13 @@ export function EditorPage() {
 
   return (
     <div className="h-screen flex flex-col bg-slate-950">
-      <header className="flex items-center justify-between px-5 py-3 border-b border-slate-800 shrink-0">
+      <header aria-label="Editor toolbar" className="flex items-center justify-between px-5 py-3 border-b border-slate-800 shrink-0">
         <div className="flex items-center gap-2 text-white font-head font-bold">
           <span className="text-lg">🧩</span> Portfolio Builder
         </div>
         <div className="flex items-center gap-3">
           <span
-            className={`hidden sm:inline text-xs ${hasUnpublishedChanges ? "text-amber-400" : "text-slate-500"}`}
+            className={`hidden sm:inline text-xs ${hasUnpublishedChanges ? "text-amber-400" : "text-slate-400"}`}
             title={
               hasUnpublishedChanges
                 ? "Saved in this browser only — use Share to publish these changes to your account."
@@ -186,7 +186,7 @@ export function EditorPage() {
               </span>
               <span className="hidden sm:flex flex-col items-start leading-tight">
                 <span className="text-xs text-slate-300 group-hover:text-white">{user?.name}</span>
-                <span className="text-[10px] text-slate-500 max-w-[160px] truncate">{user?.email}</span>
+                <span className="text-[10px] text-slate-400 max-w-[160px] truncate">{user?.email}</span>
               </span>
               {user && !user.emailVerified && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" title="Email not verified" />}
             </button>
@@ -205,7 +205,7 @@ export function EditorPage() {
       </header>
 
       {user && !user.emailVerified && !verifyBannerDismissed && (
-        <div className="flex items-center justify-between gap-3 px-5 py-2 bg-amber-400/10 border-b border-amber-400/20 text-xs text-amber-300 shrink-0">
+        <aside aria-label="Account notice" className="flex items-center justify-between gap-3 px-5 py-2 bg-amber-400/10 border-b border-amber-400/20 text-xs text-amber-300 shrink-0">
           <span>
             {resendNote || "Verify your email to secure your account. Check the API server's console for your verification link (no email provider is configured)."}
           </span>
@@ -228,20 +228,20 @@ export function EditorPage() {
               Dismiss
             </button>
           </div>
-        </div>
+        </aside>
       )}
 
       {!isStudioTab && (
         <div className="md:hidden flex border-b border-slate-800 shrink-0">
           <button
             onClick={() => setMobileView("editor")}
-            className={`flex-1 py-2.5 text-sm font-medium ${mobileView === "editor" ? "text-white border-b-2 border-cyan-400" : "text-slate-500"}`}
+            className={`flex-1 py-2.5 text-sm font-medium ${mobileView === "editor" ? "text-white border-b-2 border-cyan-400" : "text-slate-400"}`}
           >
             Editor
           </button>
           <button
             onClick={() => setMobileView("preview")}
-            className={`flex-1 py-2.5 text-sm font-medium ${mobileView === "preview" ? "text-white border-b-2 border-cyan-400" : "text-slate-500"}`}
+            className={`flex-1 py-2.5 text-sm font-medium ${mobileView === "preview" ? "text-white border-b-2 border-cyan-400" : "text-slate-400"}`}
           >
             Preview
           </button>
@@ -250,6 +250,7 @@ export function EditorPage() {
 
       <div ref={splitRef} className="flex-1 min-h-0 flex relative">
         <nav
+          aria-label="Editor sections"
           className={`w-36 sm:w-40 shrink-0 border-r border-slate-800 overflow-y-auto py-2 md:block ${
             isStudioTab || mobileView === "editor" ? "block" : "hidden"
           }`}
@@ -258,8 +259,9 @@ export function EditorPage() {
             <button
               key={key}
               onClick={() => setTab(key)}
+              aria-current={tab === key ? "page" : undefined}
               className={`w-full text-left px-4 py-2.5 text-xs font-medium transition border-l-2 ${
-                tab === key ? "text-white border-cyan-400 bg-slate-900" : "text-slate-500 border-transparent hover:text-slate-300"
+                tab === key ? "text-white border-cyan-400 bg-slate-900" : "text-slate-400 border-transparent hover:text-slate-300"
               }`}
             >
               {label}
@@ -268,9 +270,9 @@ export function EditorPage() {
         </nav>
 
         {isStudioTab ? (
-          <div className="flex-1 min-w-0 overflow-y-auto">
+          <main className="flex-1 min-w-0 overflow-y-auto">
             <ActiveTab />
-          </div>
+          </main>
         ) : (
           <>
             <div
@@ -279,9 +281,9 @@ export function EditorPage() {
               }`}
               style={isDesktop ? { width: editorWidth } : undefined}
             >
-              <div className="flex-1 min-w-0 overflow-y-auto px-5 py-6">
+              <main className="flex-1 min-w-0 overflow-y-auto px-5 py-6">
                 <ActiveTab />
-              </div>
+              </main>
             </div>
 
             <div

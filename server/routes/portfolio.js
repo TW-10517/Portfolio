@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { db } from "../db.js";
+import { validatePortfolioData } from "../validatePortfolio.js";
 import { requireAuth, hashPassword, verifyPassword } from "../auth.js";
 
 export const portfolioRouter = Router();
@@ -27,6 +28,11 @@ portfolioRouter.get("/mine", requireAuth, (req, res) => {
 portfolioRouter.put("/mine", requireAuth, async (req, res) => {
   const { data, slug: desiredSlug, visibility, password } = req.body || {};
   if (!data) return res.status(400).json({ error: "Missing portfolio data." });
+
+  // Structural checks before anything is written. The client sanitizes URLs
+  // too, but the client is the part an attacker controls.
+  const invalid = validatePortfolioData(data);
+  if (invalid) return res.status(400).json({ error: invalid });
 
   const existing = db.prepare("SELECT * FROM portfolios WHERE user_id = ?").get(req.user.sub);
   const baseSlug = slugify(desiredSlug) || `portfolio-${req.user.sub}`;

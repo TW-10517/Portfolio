@@ -71,8 +71,8 @@ const SCENE_ICONS = {
 function Card({ title, hint, children }) {
   return (
     <section className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 sm:p-6">
-      <h3 className="text-sm font-semibold text-white font-head">{title}</h3>
-      {hint && <p className="text-xs text-slate-500 mt-0.5 mb-4">{hint}</p>}
+      <h2 className="text-sm font-semibold text-white font-head">{title}</h2>
+      {hint && <p className="text-xs text-slate-400 mt-0.5 mb-4">{hint}</p>}
       {!hint && <div className="mb-4" />}
       {children}
     </section>
@@ -85,7 +85,7 @@ function Chip({ children, active, onClick }) {
       type="button"
       onClick={onClick}
       className={`px-3 py-1.5 rounded-full text-xs font-medium border transition ${
-        active ? "border-cyan-400 text-cyan-300 bg-cyan-400/10" : "border-slate-700 text-slate-500 hover:border-slate-600 hover:text-slate-300"
+        active ? "border-cyan-400 text-cyan-300 bg-cyan-400/10" : "border-slate-700 text-slate-400 hover:border-slate-600 hover:text-slate-300"
       }`}
     >
       {children}
@@ -583,7 +583,7 @@ export function TabAIVideo() {
               type="button"
               onClick={() => setShowCaptions((v) => !v)}
               className={`h-9 px-3 rounded-full text-xs font-medium border transition shrink-0 ${
-                showCaptions ? "border-cyan-400 text-cyan-300 bg-cyan-400/10" : "border-slate-700 text-slate-500"
+                showCaptions ? "border-cyan-400 text-cyan-300 bg-cyan-400/10" : "border-slate-700 text-slate-400"
               }`}
             >
               CC {showCaptions ? "On" : "Off"}
@@ -615,7 +615,7 @@ export function TabAIVideo() {
                 style={{ left: scenePlan ? `${Math.min(100, (currentSeconds / scenePlan.totalSeconds) * 100)}%` : "0%" }}
               />
             </div>
-            <span className="text-xs text-slate-500 tabular-nums shrink-0">
+            <span className="text-xs text-slate-400 tabular-nums shrink-0">
               {formatTimestamp(currentSeconds)} / {formatTimestamp(scenePlan?.totalSeconds || 0)}
             </span>
             <Button
@@ -632,7 +632,7 @@ export function TabAIVideo() {
           </div>
 
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <p className="text-[11px] text-slate-500">
+            <p className="text-[11px] text-slate-400">
               {scenePlan ? `~${scenePlan.totalSeconds}s · ${scenePlan.scenes.length} scenes · scripted via ${providerLabel}` : "Preparing your video…"}
             </p>
             {error && <p className="text-[11px] text-red-400">{error}</p>}
@@ -645,7 +645,7 @@ export function TabAIVideo() {
         <div className="max-w-3xl mx-auto space-y-5">
           <div className="grid sm:grid-cols-2 gap-5">
             <Card title="Purpose" hint="Who is this video for? The AI shifts emphasis to match.">
-              <Select value={config.audience} onChange={(e) => setConfig((c) => ({ ...c, audience: e.target.value }))}>
+              <Select aria-label="Who is this video for?" value={config.audience} onChange={(e) => setConfig((c) => ({ ...c, audience: e.target.value }))}>
                 {AUDIENCE_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
@@ -655,16 +655,16 @@ export function TabAIVideo() {
             <Card title="Format" hint="Length drives how many scenes make the cut.">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Length</label>
-                  <Select value={config.length} onChange={(e) => setConfig((c) => ({ ...c, length: e.target.value }))}>
+                  <label htmlFor="aiv-length" className="block text-xs font-medium text-slate-400 mb-1.5">Length</label>
+                  <Select id="aiv-length" value={config.length} onChange={(e) => setConfig((c) => ({ ...c, length: e.target.value }))}>
                     {Object.entries(LENGTH_OPTIONS).map(([key, o]) => (
                       <option key={key} value={key}>{o.label}</option>
                     ))}
                   </Select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Language</label>
-                  <Select value={config.language} onChange={(e) => setConfig((c) => ({ ...c, language: e.target.value }))}>
+                  <label htmlFor="aiv-language" className="block text-xs font-medium text-slate-400 mb-1.5">Language</label>
+                  <Select id="aiv-language" value={config.language} onChange={(e) => setConfig((c) => ({ ...c, language: e.target.value }))}>
                     {LANGUAGES.map((l) => (
                       <option key={l.code} value={l.label}>{l.label}</option>
                     ))}
@@ -677,7 +677,7 @@ export function TabAIVideo() {
                 </p>
               )}
               {config.language !== "English" && providerName.startsWith("Ollama") && (
-                <p className="text-[11px] text-slate-500 mt-2">
+                <p className="text-[11px] text-slate-400 mt-2">
                   Non-English quality depends on the model — smaller ones handle Japanese far better than Tamil. Any scene the model can't write in{" "}
                   {config.language} falls back to English rather than shipping nonsense.
                 </p>
@@ -707,7 +707,7 @@ export function TabAIVideo() {
                   <div className="text-sm font-medium text-white flex items-center gap-1.5">
                     <span>{STYLE_ICONS[o.value]}</span> {o.label}
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">{o.hint}</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">{o.hint}</div>
                 </button>
               ))}
             </div>
@@ -734,8 +734,8 @@ export function TabAIVideo() {
             {isTTSSupported() && (
               <div className="grid grid-cols-3 gap-3 mb-3">
                 <div className="col-span-2">
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Narration voice</label>
-                  <Select value={config.voiceURI} onChange={(e) => setConfig((c) => ({ ...c, voiceURI: e.target.value }))}>
+                  <label htmlFor="aiv-voice" className="block text-xs font-medium text-slate-400 mb-1.5">Narration voice</label>
+                  <Select id="aiv-voice" value={config.voiceURI} onChange={(e) => setConfig((c) => ({ ...c, voiceURI: e.target.value }))}>
                     <option value="">System default</option>
                     {voices.map((v) => (
                       <option key={v.voiceURI} value={v.voiceURI}>{v.name} ({v.lang})</option>
@@ -743,8 +743,8 @@ export function TabAIVideo() {
                   </Select>
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">Speed</label>
-                  <Select value={config.speed} onChange={(e) => setConfig((c) => ({ ...c, speed: e.target.value }))}>
+                  <label htmlFor="aiv-speed" className="block text-xs font-medium text-slate-400 mb-1.5">Speed</label>
+                  <Select id="aiv-speed" value={config.speed} onChange={(e) => setConfig((c) => ({ ...c, speed: e.target.value }))}>
                     <option value="slow">Slow</option>
                     <option value="normal">Normal</option>
                     <option value="fast">Fast</option>
@@ -756,6 +756,7 @@ export function TabAIVideo() {
 
           <Card title="How should the video feel?" hint="Optional — nudges wording and which projects get priority.">
             <TextArea
+              aria-label="How should the video feel?"
               rows={2}
               value={config.customInstruction}
               onChange={(e) => setConfig((c) => ({ ...c, customInstruction: e.target.value }))}
@@ -765,7 +766,7 @@ export function TabAIVideo() {
 
           <div>
             <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                 Scenes {scenePlan ? `(${scenePlan.scenes.length})` : ""}
               </h3>
               <p className="text-[11px] text-slate-600">Edits here survive Speed and Voice changes, but a setting above rewrites the script.</p>
@@ -793,24 +794,33 @@ export function TabAIVideo() {
                       <span>{SCENE_ICONS[scene.type]}</span> {scene.title}
                     </button>
                     <div className="flex items-center gap-0.5">
-                      <button type="button" onClick={() => moveScene(index, -1)} disabled={index === 0} className="text-slate-500 hover:text-white disabled:opacity-30 text-xs w-5 h-5">↑</button>
-                      <button type="button" onClick={() => moveScene(index, 1)} disabled={index === scenePlan.scenes.length - 1} className="text-slate-500 hover:text-white disabled:opacity-30 text-xs w-5 h-5">↓</button>
+                      <button type="button" onClick={() => moveScene(index, -1)} disabled={index === 0} className="text-slate-400 hover:text-white disabled:opacity-30 text-xs w-5 h-5">↑</button>
+                      <button type="button" onClick={() => moveScene(index, 1)} disabled={index === scenePlan.scenes.length - 1} className="text-slate-400 hover:text-white disabled:opacity-30 text-xs w-5 h-5">↓</button>
                       <button
                         type="button"
                         onClick={() => handleRegenerateScene(scene.id)}
                         disabled={regeneratingId === scene.id}
-                        className="text-slate-500 hover:text-cyan-400 text-xs w-5 h-5"
+                        className="text-slate-400 hover:text-cyan-400 text-xs w-5 h-5"
                         title="Rewrite just this scene"
                       >
                         {regeneratingId === scene.id ? "…" : "✨"}
                       </button>
-                      <button type="button" onClick={() => removeScene(scene.id)} className="text-slate-500 hover:text-red-400 text-xs w-5 h-5">✕</button>
+                      <button type="button" onClick={() => removeScene(scene.id)} className="text-slate-400 hover:text-red-400 text-xs w-5 h-5">✕</button>
                     </div>
                   </div>
-                  <TextArea rows={2} value={scene.text} onChange={(e) => updateScene(scene.id, { text: e.target.value })} className="text-xs" />
+                  <TextArea
+                    aria-label={`Narration for scene ${index + 1}: ${scene.title}`}
+                    rows={2}
+                    value={scene.text}
+                    onChange={(e) => updateScene(scene.id, { text: e.target.value })}
+                    className="text-xs"
+                  />
                   <div className="flex items-center gap-2 mt-2">
-                    <label className="text-[11px] text-slate-500">Duration</label>
+                    <label htmlFor={`scene-duration-${scene.id}`} className="text-[11px] text-slate-400">
+                      Duration
+                    </label>
                     <input
+                      id={`scene-duration-${scene.id}`}
                       type="number"
                       min={3}
                       max={40}
@@ -818,7 +828,7 @@ export function TabAIVideo() {
                       onChange={(e) => updateScene(scene.id, { duration: Number(e.target.value) || scene.duration })}
                       className="w-14 rounded bg-slate-900 border border-slate-700 px-2 py-1 text-xs text-slate-100"
                     />
-                    <span className="text-[11px] text-slate-500">sec</span>
+                    <span className="text-[11px] text-slate-400">sec</span>
                   </div>
                 </div>
               ))}
@@ -826,7 +836,7 @@ export function TabAIVideo() {
           </div>
 
           <div>
-            <button type="button" className="text-xs text-slate-500 hover:text-slate-300" onClick={() => setShowAdvanced((v) => !v)}>
+            <button type="button" className="text-xs text-slate-400 hover:text-slate-300" onClick={() => setShowAdvanced((v) => !v)}>
               {showAdvanced ? "Hide" : "Show"} advanced — script writer ({providerName})
             </button>
             {showAdvanced && (
@@ -841,7 +851,7 @@ export function TabAIVideo() {
                         detected
                       </span>
                     ) : (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-500">not running</span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">not running</span>
                     )}
                   </div>
 
@@ -853,6 +863,7 @@ export function TabAIVideo() {
                       </p>
                       <div className="flex gap-2 items-center">
                         <Select
+                          aria-label="Local Ollama model"
                           value={ollamaModel}
                           onChange={(e) => {
                             setOllamaModel(e.target.value);

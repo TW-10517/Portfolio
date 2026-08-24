@@ -17,7 +17,7 @@ export function buildPalette(mode) {
       border: "rgba(10,12,30,0.08)",
       text: "#12131c",
       textDim: "#4a4d63",
-      textFaint: "#8589a0",
+      textFaint: "#63687c",
     };
   }
   return {
@@ -27,6 +27,6 @@ export function buildPalette(mode) {
     border: "rgba(255,255,255,0.08)",
     text: "#f4f5f8",
     textDim: "#a7abc0",
-    textFaint: "#6b7086",
+    textFaint: "#8b90a8",
   };
 }

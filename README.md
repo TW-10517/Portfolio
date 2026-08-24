@@ -130,13 +130,33 @@ Custom CSS from the Theme tab is passed through `utils/sanitizeCss.js` before be
 npm test
 ```
 
-130 tests across 11 files (Vitest, plus Supertest for the API):
+206 tests across 19 files (Vitest, plus Supertest for the API and Testing Library for components):
 
 - **API integration** — `server/routes/auth.integration.test.js`, `portfolio.integration.test.js` (real HTTP against the Express app, real SQLite)
 - **Auth units** — `server/auth.test.js` (hashing, JWT, validation rules)
 - **AI** — `factGuard.test.js` (the grounding guard), `LocalProvider.test.js` (word-cap sentence trimming)
 - **Video** — `sceneBuilder.test.js`, `timing.test.js`, `exportFormat.test.js`, `player.test.js`
-- **Utils** — `slug.test.js`, `sanitizeCss.test.js`
+- **Components** — `ShareModal.test.jsx` (publish state and view count), `RequireAuth.test.jsx` (the editor guard), `ImageUpload.test.jsx` (upload limits and failure handling)
+- **Security** — `sanitizeUrl.test.js` (link scheme allowlist), `server/validatePortfolio.test.js` (save-time structural checks), `server/SqliteRateLimitStore.test.js` (persistent rate limiting)
+- **Utils** — `slug.test.js`, `sanitizeCss.test.js`, `textMetrics.test.js`, `exportImport.test.js`
+
+Component suites opt into a DOM per file with a `// @vitest-environment jsdom`
+docblock; everything else runs in plain Node, so the fast majority of the suite
+skips jsdom's startup cost.
+
+`.github/workflows/ci.yml` runs the suite and a production build on every push
+and pull request, and asserts that the server still refuses to boot in
+production with the insecure dev `JWT_SECRET`.
+
+### Clearing test accounts
+
+Browser-driven QA registers a throwaway account each run. To tidy the dev
+database:
+
+```bash
+npm run db:clear-test-users            # removes *@example.com and their portfolios
+npm run db:clear-test-users -- '%@qa.local'
+```
 
 ## Project structure
 
@@ -182,11 +202,45 @@ The frontend is a static build (`npm run build` → `dist/`) — deploy to Netli
 
 (`legacy-static/` isn't part of the Vite build and would need deploying separately.)
 
+## Security and accessibility
+
+**Link schemes are allowlisted.** Portfolio URLs are author-supplied and are
+rendered into `href` for everyone who opens a share link. `javascript:` in one
+of those fields used to be stored and served verbatim — React only warns about
+those, it does not block them. Every user URL now passes through
+`sanitizeUrl()` (`src/utils/sanitizeUrl.js`), which permits `http`, `https`,
+`mailto` and `tel`, plus inline PDFs for the resume download, and strips
+control characters first so `java&#9;script:` can't walk past the check. A
+rejected URL renders with no `href` at all rather than a broken link.
+
+**Saves are validated server-side.** `PUT /portfolios/mine` used to accept any
+JSON at all. `server/validatePortfolio.js` now enforces a size budget, a
+nesting depth limit, a node count, per-string limits, the same URL scheme rules,
+and rejects `__proto__`/`constructor`/`prototype` keys — which survive
+`JSON.parse` as own properties and can poison whatever merges the document
+later. The client sanitizes too, but the client is the part an attacker
+controls.
+
+**Rate limit counters are persisted.** `express-rate-limit`'s default store
+lives in process memory, so every restart handed out a fresh allowance and
+nothing was shared between workers. `server/SqliteRateLimitStore.js` keeps them
+in the database that is already the source of truth.
+
+**Accessibility is audited with axe-core.** The login page, both editor modes
+and the rendered portfolio report zero violations at every impact level. Getting
+there meant labelling controls whose only label was a neighbouring `<span>`,
+raising two text colours that measured 4.23:1 and 3.49:1 against the 4.5:1
+minimum, underlining inline links that failed the 3:1 non-colour distinction,
+and adding the `<main>`/`<aside>` landmarks the app had none of. When embedded
+in the editor's preview pane the portfolio renders its sections as a labelled
+`<section>` rather than `<main>`, since a document may only have one.
+
 ## Known gaps
 
 - **No email delivery.** Reset and verification links go to the API server's console. Wire a provider into `deliverLink()` in `server/routes/auth.js`.
-- **SQLite only.** `server/db.js` doesn't speak Postgres — see "Moving to a hosted database" above.
-- **No server-rendered SEO** for share pages. The app is a hash-routed SPA, so `#/p/:slug` won't produce link previews or index well; that needs the SSR path (e.g. Next.js) from the original spec.
+- **SQLite only.** `server/db.js` doesn't speak Postgres — see "Moving to a hosted database" above. It's a single file on one disk: `npm run db:backup` takes a consistent snapshot via SQLite's online backup API (safe on a live WAL database, unlike `cp`), keeping the newest 10 in `server/backups/`.
+- **No per-portfolio link previews.** `index.html` carries Open Graph and Twitter card tags for the app itself, but a shared portfolio can't get its own: the `#/p/:slug` fragment is never sent to the server, and the Slack/LinkedIn/WhatsApp crawlers don't run JavaScript, so every share link previews identically. Fixing this properly needs server-rendered HTML per slug (the SSR path from the original spec).
+- **Uploaded images live inside the portfolio JSON.** There's no object storage, by design. Uploads are downscaled to 1600px and re-encoded as WebP on the way in (`src/utils/exportImport.js`), which keeps a normal portfolio far under the API's 15MB cap, but a portfolio with dozens of images will still eventually hit it.
 - **Non-English narration needs a real model, and its quality is the model's.** The offline template writer is English-only; any LLM (local or cloud) can write the other languages, and the tab says so when the active writer can't. Capability varies sharply by model — `qwen2.5:3b` handles Japanese well and Tamil poorly — so a scene the model can't write in the chosen language is rejected and falls back to English rather than shipping nonsense.
 - **On-screen text stays in the portfolio's own language.** Only the narration and captions are translated; names, roles, and skill chips are rendered from your portfolio fields verbatim.
 - **Video export depends on browser support.** `MediaRecorder` MP4 muxing and `getDisplayMedia` audio capture vary by browser; the export degrades to WebM and/or silent video rather than failing.

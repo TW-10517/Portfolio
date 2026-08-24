@@ -40,7 +40,7 @@ export function ResetPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950 px-4">
+    <main className="min-h-screen flex items-center justify-center bg-slate-950 px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 text-white font-head font-bold text-lg mb-6">
@@ -79,12 +79,12 @@ export function ResetPasswordPage() {
           </form>
         )}
 
-        <p className="text-center text-sm text-slate-500 mt-6">
-          <Link to="/login" className="text-cyan-400 hover:text-cyan-300">
+        <p className="text-center text-sm text-slate-400 mt-6">
+          <Link to="/login" className="text-cyan-400 underline hover:text-cyan-300">
             ← Back to log in
           </Link>
         </p>
       </div>
-    </div>
+    </main>
   );
 }

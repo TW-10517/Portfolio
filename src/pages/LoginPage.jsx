@@ -37,7 +37,7 @@ export function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-950 px-4">
+    <main className="min-h-screen flex items-center justify-center bg-slate-950 px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 text-white font-head font-bold text-lg mb-6">
@@ -53,13 +53,27 @@ export function LoginPage() {
           </Field>
           {errors.email && <p className="text-xs text-red-400 -mt-3 mb-3">{errors.email}</p>}
 
+          {/* This field sits outside <Field> because of the "Forgot password?"
+              link beside its label, which meant the input had no associated
+              label at all — axe flagged it critical and a screen reader
+              announced an unnamed text box. htmlFor restores the association
+              without changing the layout. */}
           <div className="flex items-center justify-between mb-1.5">
-            <span className="block text-xs font-medium text-slate-400">Password</span>
-            <Link to="/forgot-password" className="text-xs text-cyan-400 hover:text-cyan-300">
+            <label htmlFor="login-password" className="block text-xs font-medium text-slate-400">
+              Password
+            </label>
+            <Link to="/forgot-password" className="text-xs text-cyan-400 underline hover:text-cyan-300">
               Forgot password?
             </Link>
           </div>
-          <TextInput type="password" value={form.password} onChange={set("password")} autoComplete="current-password" className="mb-1" />
+          <TextInput
+            id="login-password"
+            type="password"
+            value={form.password}
+            onChange={set("password")}
+            autoComplete="current-password"
+            className="mb-1"
+          />
           {errors.password && <p className="text-xs text-red-400 mb-3">{errors.password}</p>}
           {!errors.password && <div className="mb-3" />}
 
@@ -70,13 +84,13 @@ export function LoginPage() {
           </Button>
         </form>
 
-        <p className="text-center text-sm text-slate-500 mt-6">
+        <p className="text-center text-sm text-slate-400 mt-6">
           Don't have an account?{" "}
-          <Link to="/register" className="text-cyan-400 hover:text-cyan-300">
+          <Link to="/register" className="text-cyan-400 underline hover:text-cyan-300">
             Create one
           </Link>
         </p>
       </div>
-    </div>
+    </main>
   );
 }

@@ -3,7 +3,7 @@ export function Field({ label, hint, children }) {
     <label className="block mb-4">
       <span className="block text-xs font-medium text-slate-400 mb-1.5">{label}</span>
       {children}
-      {hint && <span className="block text-[11px] text-slate-500 mt-1">{hint}</span>}
+      {hint && <span className="block text-[11px] text-slate-400 mt-1">{hint}</span>}
     </label>
   );
 }

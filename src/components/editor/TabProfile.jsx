@@ -3,7 +3,7 @@ import { Field, TextInput } from "../ui/Field.jsx";
 import { ImageUpload } from "../ui/ImageUpload.jsx";
 import { Button } from "../ui/Button.jsx";
 import { TabShell, SubHeading } from "./TabShell.jsx";
-import { readImageFile } from "../../utils/exportImport.js";
+import { readFileAsDataUrl } from "../../utils/exportImport.js";
 import { ResumeImportModal } from "./ResumeImportModal.jsx";
 import { useRef, useState } from "react";
 
@@ -25,8 +25,14 @@ export function TabProfile() {
       alert("Please upload a PDF file.");
       return;
     }
-    const dataUrl = await readImageFile(file);
-    set("resumeUrl", dataUrl);
+    // The PDF is base64'd into the portfolio JSON, which the API caps at 15MB
+    // for the whole document — without a limit here a large resume silently
+    // pushed the portfolio over that cap and broke saving.
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Please choose a PDF under 5MB — it's stored inside your portfolio.");
+      return;
+    }
+    set("resumeUrl", await readFileAsDataUrl(file));
   };
 
   return (
@@ -84,7 +90,7 @@ export function TabProfile() {
         <Button variant="subtle" size="sm" onClick={() => setImportOpen(true)}>
           ✨ Auto-fill from resume
         </Button>
-        <p className="text-[11px] text-slate-500 mt-2">
+        <p className="text-[11px] text-slate-400 mt-2">
           Extracts text from a PDF entirely in your browser and suggests profile fields, skills, and experience for you to review — no AI, no upload to any server.
         </p>
       </div>

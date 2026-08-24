@@ -4,3 +4,6 @@ dist
 server/data.sqlite
 server/data.sqlite-*
 .env
+
+# Local database backups produced by "npm run db:backup"
+server/backups/

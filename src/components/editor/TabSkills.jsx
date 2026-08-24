@@ -46,7 +46,7 @@ export function TabSkills() {
               <button
                 type="button"
                 onClick={() => removeCategory(cat.id)}
-                className="w-8 h-8 shrink-0 flex items-center justify-center rounded-md text-slate-500 hover:text-red-400 hover:bg-red-500/10"
+                className="w-8 h-8 shrink-0 flex items-center justify-center rounded-md text-slate-400 hover:text-red-400 hover:bg-red-500/10"
                 aria-label="Remove category"
               >
                 &times;
@@ -72,7 +72,7 @@ export function TabSkills() {
                   <button
                     type="button"
                     onClick={() => removeSkill(cat.id, skill.id)}
-                    className="w-6 h-6 shrink-0 flex items-center justify-center rounded-md text-slate-500 hover:text-red-400"
+                    className="w-6 h-6 shrink-0 flex items-center justify-center rounded-md text-slate-400 hover:text-red-400"
                     aria-label="Remove skill"
                   >
                     &times;

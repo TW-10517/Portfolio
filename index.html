@@ -5,6 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Portfolio Builder</title>
     <meta name="description" content="Build, preview, and share your personal portfolio — no code required." />
+
+    <!-- Link-preview metadata for the app itself. Note that a *shared
+         portfolio* at #/p/:slug cannot get its own preview from here: the
+         fragment is never sent to the server, and Slack/LinkedIn/WhatsApp
+         crawlers don't run JavaScript, so they only ever see these tags.
+         Per-portfolio previews need server-rendered HTML per slug. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Portfolio Builder" />
+    <meta property="og:title" content="Portfolio Builder" />
+    <meta property="og:description" content="Build, preview, and share your personal portfolio — no code required." />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Portfolio Builder" />
+    <meta name="twitter:description" content="Build, preview, and share your personal portfolio — no code required." />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧩</text></svg>" />
   </head>
   <body>

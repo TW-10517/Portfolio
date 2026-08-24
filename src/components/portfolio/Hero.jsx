@@ -1,6 +1,7 @@
 import { usePortfolioTheme } from "./ThemeContext.jsx";
 import { ParticleCanvas } from "./ParticleCanvas.jsx";
 import { useTyping } from "../../hooks/useTyping.js";
+import { sanitizeUrl, sanitizeDownloadUrl } from "../../utils/sanitizeUrl.js";
 
 export function Hero() {
   const { data, palette, primary, secondary, animationLevel } = usePortfolioTheme();
@@ -92,7 +93,7 @@ export function Hero() {
             </button>
             {profile.resumeUrl && (
               <a
-                href={profile.resumeUrl}
+                href={sanitizeDownloadUrl(profile.resumeUrl)}
                 download={`${(profile.name || "resume").replace(/\s+/g, "-").toLowerCase()}-resume.pdf`}
                 className="px-7 py-3.5 rounded-full font-semibold text-sm border transition hover:-translate-y-0.5"
                 style={{ borderColor: palette.border, color: palette.text }}
@@ -108,7 +109,7 @@ export function Hero() {
               .map(([key, url]) => (
                 <a
                   key={key}
-                  href={url}
+                  href={sanitizeUrl(url)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-10 h-10 rounded-full border flex items-center justify-center text-xs uppercase transition hover:-translate-y-1"

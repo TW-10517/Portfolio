@@ -10,7 +10,7 @@ import { Field, TextInput } from "../ui/Field.jsx";
 function Row({ label, children }) {
   return (
     <div className="flex items-start justify-between gap-4 py-2.5 border-b border-slate-800 last:border-0">
-      <span className="text-xs text-slate-500 shrink-0 pt-0.5">{label}</span>
+      <span className="text-xs text-slate-400 shrink-0 pt-0.5">{label}</span>
       <span className="text-sm text-slate-200 text-right break-all">{children}</span>
     </div>
   );
@@ -173,7 +173,7 @@ export function AccountModal({ open, onClose }) {
 
           {errors.form && <p className="text-sm text-red-400 mb-3">{errors.form}</p>}
           {notice && <p className="text-sm text-cyan-400 mb-3">{notice}</p>}
-          <p className="text-[11px] text-slate-500 mb-4">Changing your password signs you out of all devices, including this one.</p>
+          <p className="text-[11px] text-slate-400 mb-4">Changing your password signs you out of all devices, including this one.</p>
 
           <div className="flex gap-2">
             <Button type="button" variant="ghost" onClick={() => setView("details")} disabled={busy}>

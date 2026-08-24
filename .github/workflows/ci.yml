@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main, video]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # The suites run against an in-memory database so CI never touches a
+      # checked-in SQLite file.
+      DATABASE_URL: ":memory:"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # better-sqlite3 ships prebuilt binaries for current Node LTS on Linux,
+      # so this needs no system toolchain.
+      - run: npm ci
+
+      - name: Unit, component and integration tests
+        run: npm test
+        env:
+          JWT_SECRET: ci-only-secret-not-used-in-production
+
+      - name: Production build
+        run: npm run build
+
+      # The server refuses to boot in production without a real JWT_SECRET.
+      # Asserting it here means the guard can't be dropped unnoticed.
+      - name: Reject an insecure production secret
+        env:
+          NODE_ENV: production
+          JWT_SECRET: dev-only-insecure-secret-change-in-production
+        run: |
+          if node -e "import('./server/app.js')" 2>/dev/null; then
+            echo "::error::Server booted in production with the insecure dev secret"
+            exit 1
+          fi
+          echo "Guard held."

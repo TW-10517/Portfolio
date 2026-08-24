@@ -10,13 +10,13 @@ export function PreviewPage() {
   return (
     <div className="min-h-screen">
       {bannerVisible && (
-        <div className="fixed top-0 left-0 right-0 z-[100] flex items-center justify-between gap-3 bg-amber-400 text-slate-950 text-xs sm:text-sm font-medium px-4 py-2">
+        <aside aria-label="Preview notice" className="fixed top-0 left-0 right-0 z-[100] flex items-center justify-between gap-3 bg-amber-400 text-slate-950 text-xs sm:text-sm font-medium px-4 py-2">
           <span>👁️ Visitor Preview — this shows your unpublished draft exactly as visitors would see it.</span>
           <div className="flex items-center gap-3 shrink-0">
             <Link to="/editor" className="underline">Back to Editor</Link>
             <button onClick={() => setBannerVisible(false)} className="text-slate-950/70 hover:text-slate-950">✕</button>
           </div>
-        </div>
+        </aside>
       )}
       <div style={{ paddingTop: bannerVisible ? 36 : 0 }}>
         <PortfolioView data={data} />

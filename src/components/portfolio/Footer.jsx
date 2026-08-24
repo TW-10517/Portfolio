@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { usePortfolioTheme } from "./ThemeContext.jsx";
+import { sanitizeUrl } from "../../utils/sanitizeUrl.js";
 
 export function Footer({ scrollRootEl, showBrand = true }) {
   const { data, palette, primary, secondary } = usePortfolioTheme();
@@ -23,7 +24,7 @@ export function Footer({ scrollRootEl, showBrand = true }) {
       <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-xs" style={{ color: palette.textFaint }}>
         <div className="flex gap-4">
           {Object.entries(data.profile.social || {}).filter(([, v]) => v).slice(0, 5).map(([key, url]) => (
-            <a key={key} href={url} target="_blank" rel="noopener noreferrer" className="hover:underline" style={{ color: palette.textDim }}>
+            <a key={key} href={sanitizeUrl(url)} target="_blank" rel="noopener noreferrer" className="hover:underline" style={{ color: palette.textDim }}>
               {key}
             </a>
           ))}

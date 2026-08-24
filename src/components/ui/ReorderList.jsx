@@ -26,7 +26,7 @@ export function ReorderList({ items, renderItem, onReorder, onRemove, addLabel, 
         >
           <div className="flex items-start gap-2">
             <span
-              className="cursor-grab active:cursor-grabbing text-slate-500 hover:text-slate-300 select-none mt-1.5 shrink-0"
+              className="cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-300 select-none mt-1.5 shrink-0"
               title="Drag to reorder"
             >
               ⠿
@@ -35,7 +35,7 @@ export function ReorderList({ items, renderItem, onReorder, onRemove, addLabel, 
             <button
               type="button"
               onClick={() => onRemove(item.id)}
-              className="w-7 h-7 flex items-center justify-center rounded-md text-slate-500 hover:text-red-400 hover:bg-red-500/10 shrink-0"
+              className="w-7 h-7 flex items-center justify-center rounded-md text-slate-400 hover:text-red-400 hover:bg-red-500/10 shrink-0"
               aria-label="Remove"
             >
               &times;

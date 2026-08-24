@@ -10,5 +10,5 @@ export function TabShell({ title, description, children }) {
 }
 
 export function SubHeading({ children }) {
-  return <h3 className="text-sm font-semibold text-slate-200 mt-2 mb-3 uppercase tracking-wide text-[11px] text-slate-500">{children}</h3>;
+  return <h3 className="text-sm font-semibold text-slate-200 mt-2 mb-3 uppercase tracking-wide text-[11px] text-slate-400">{children}</h3>;
 }
