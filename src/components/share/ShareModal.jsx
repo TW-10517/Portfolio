@@ -111,7 +111,7 @@ export function ShareModal({ open, onClose }) {
   };
 
   return (
-    <Modal open={open} onClose={onClose} wide>
+    <Modal open={open} onClose={onClose} wide label="Share your portfolio">
       <h2 className="text-xl font-head font-bold text-white mb-1">Share your portfolio</h2>
       <p className="text-sm text-slate-400 mb-6">Publish your portfolio to your account — accessible from any device at a public link.</p>
 

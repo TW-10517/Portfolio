@@ -120,6 +120,9 @@ export function TabAIVideo() {
   const [dragSeconds, setDragSeconds] = useState(0);
   const [showCaptions, setShowCaptions] = useState(true);
   const [regeneratingId, setRegeneratingId] = useState(null);
+  // Raw text of any duration field currently being edited, so a half-typed or
+  // empty value doesn't have to be a valid scene duration.
+  const [durationDraft, setDurationDraft] = useState({});
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(null);
   const [exportNote, setExportNote] = useState("");
@@ -340,8 +343,20 @@ export function TabAIVideo() {
     }
   };
 
+  // Every mutation below has to go through this. totalSeconds isn't display
+  // sugar: the timeline scrubber converts a click position into a time with
+  // it, so a stale total silently mis-seeks as well as showing the wrong
+  // length. Editing a duration or deleting a scene both used to leave it at
+  // whatever the generator last computed.
+  const withTotals = (plan) => ({
+    ...plan,
+    totalSeconds: plan.scenes.reduce((sum, s) => sum + (Number(s.duration) || 0), 0),
+  });
+
   const updateScene = (sceneId, patch) => {
-    setScenePlan((plan) => ({ ...plan, scenes: plan.scenes.map((s) => (s.id === sceneId ? { ...s, ...patch } : s)) }));
+    setScenePlan((plan) =>
+      withTotals({ ...plan, scenes: plan.scenes.map((s) => (s.id === sceneId ? { ...s, ...patch } : s)) })
+    );
   };
 
   const moveScene = (index, dir) => {
@@ -350,12 +365,14 @@ export function TabAIVideo() {
       const target = index + dir;
       if (target < 0 || target >= scenes.length) return plan;
       [scenes[index], scenes[target]] = [scenes[target], scenes[index]];
-      return { ...plan, scenes };
+      return withTotals({ ...plan, scenes });
     });
   };
 
   const removeScene = (sceneId) => {
-    setScenePlan((plan) => (plan.scenes.length <= 1 ? plan : { ...plan, scenes: plan.scenes.filter((s) => s.id !== sceneId) }));
+    setScenePlan((plan) =>
+      plan.scenes.length <= 1 ? plan : withTotals({ ...plan, scenes: plan.scenes.filter((s) => s.id !== sceneId) })
+    );
   };
 
   // An explicit choice wins; otherwise pick a voice that actually speaks the
@@ -824,8 +841,30 @@ export function TabAIVideo() {
                       type="number"
                       min={3}
                       max={40}
-                      value={scene.duration}
-                      onChange={(e) => updateScene(scene.id, { duration: Number(e.target.value) || scene.duration })}
+                      value={durationDraft[scene.id] ?? scene.duration}
+                      onChange={(e) => {
+                        // The old handler fell back to the current duration
+                        // whenever Number(value) was falsy, so clearing the
+                        // box put the old number straight back and the next
+                        // keystroke appended to it — typing "25" over "30"
+                        // produced "3025". Keeping the raw text while the
+                        // field is being edited lets it be emptied.
+                        const raw = e.target.value;
+                        setDurationDraft((d) => ({ ...d, [scene.id]: raw }));
+                        const n = Number(raw);
+                        if (raw !== "" && Number.isFinite(n) && n >= 3 && n <= 40) {
+                          updateScene(scene.id, { duration: Math.round(n) });
+                        }
+                      }}
+                      onBlur={() => {
+                        const raw = durationDraft[scene.id];
+                        setDurationDraft(({ [scene.id]: _drop, ...rest }) => rest);
+                        if (raw === undefined || raw === "") return;
+                        const n = Math.round(Number(raw));
+                        updateScene(scene.id, {
+                          duration: Number.isFinite(n) && n > 0 ? Math.min(40, Math.max(3, n)) : scene.duration,
+                        });
+                      }}
                       className="w-14 rounded bg-slate-900 border border-slate-700 px-2 py-1 text-xs text-slate-100"
                     />
                     <span className="text-[11px] text-slate-400">sec</span>

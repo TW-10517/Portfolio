@@ -7,6 +7,10 @@ import { Button } from "../components/ui/Button.jsx";
 
 export function LoginPage() {
   const login = useAuthStore((s) => s.login);
+  // Explains why someone who was signed in a moment ago is looking at a login
+  // form. Without it the app just silently forgets you.
+  const sessionExpired = useAuthStore((s) => s.sessionExpired);
+  const clearSessionExpired = useAuthStore((s) => s.clearSessionExpired);
   const navigate = useNavigate();
   const [form, setForm] = useState({ email: "", password: "" });
   const [errors, setErrors] = useState({});
@@ -46,6 +50,23 @@ export function LoginPage() {
           <h1 className="text-2xl font-head font-bold text-white mb-1">Welcome back</h1>
           <p className="text-sm text-slate-400">Log in to keep editing your portfolio.</p>
         </div>
+
+        {sessionExpired && (
+          <div
+            role="status"
+            className="flex items-start justify-between gap-3 mb-5 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-xs text-amber-300"
+          >
+            <span>Your session ended — please log in again. Any unsaved edits are still in this browser.</span>
+            <button
+              type="button"
+              onClick={clearSessionExpired}
+              aria-label="Dismiss"
+              className="text-amber-400/70 hover:text-amber-300 shrink-0"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         <form onSubmit={submit} noValidate>
           <Field label="Email">

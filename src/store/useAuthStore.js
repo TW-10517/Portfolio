@@ -1,12 +1,15 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { api } from "../utils/api.js";
+import { api, setUnauthorizedHandler } from "../utils/api.js";
 
 export const useAuthStore = create(
   persist(
     (set, get) => ({
       token: null,
       user: null,
+      // Set when the server rejected our token, so the login page can explain
+      // why the user landed back there instead of just appearing to log out.
+      sessionExpired: false,
 
       register: async ({ name, email, password }) => {
         const { token, user } = await api.register({ name, email, password });
@@ -16,9 +19,19 @@ export const useAuthStore = create(
 
       login: async ({ email, password }) => {
         const { token, user } = await api.login({ email, password });
-        set({ token, user });
+        set({ token, user, sessionExpired: false });
         return user;
       },
+
+      // Ends the session locally because the server no longer accepts the
+      // token. Deliberately does not call the logout endpoint: the token is
+      // already invalid, so there is nothing to revoke.
+      endExpiredSession: () => {
+        if (!get().token) return;
+        set({ token: null, user: null, sessionExpired: true });
+      },
+
+      clearSessionExpired: () => set({ sessionExpired: false }),
 
       logout: async () => {
         const token = get().token;
@@ -49,3 +62,5 @@ export const useAuthStore = create(
     { name: "portfolio-builder:auth" }
   )
 );
+
+setUnauthorizedHandler(() => useAuthStore.getState().endExpiredSession());

@@ -83,7 +83,7 @@ export function Projects() {
         </div>
       </div>
 
-      <Modal open={!!selected} onClose={() => setSelected(null)} wide>
+      <Modal open={!!selected} onClose={() => setSelected(null)} wide label={selected ? `Project: ${selected.name}` : "Project details"}>
         {selected && (
           <div>
             {selected.images?.[0] && <img src={selected.images[0]} alt={selected.name} className="w-full rounded-xl mb-5 max-h-72 object-cover" />}

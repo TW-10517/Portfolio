@@ -8,6 +8,19 @@ export class ApiError extends Error {
   }
 }
 
+// A 30-day token can be revoked (logout elsewhere, password change) or simply
+// expire while a tab sits open. Nothing used to notice: the app kept rendering
+// the editor as if signed in, background syncs failed silently, and the only
+// sign of trouble was an error when you finally tried to publish. The session
+// owner registers here so it can end the session the moment the server says
+// the token is no longer good. A plain callback, rather than importing the
+// store, because the store imports this module.
+let onUnauthorized = null;
+
+export function setUnauthorizedHandler(fn) {
+  onUnauthorized = fn;
+}
+
 async function request(path, { method = "GET", body, token } = {}) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -31,6 +44,9 @@ async function request(path, { method = "GET", body, token } = {}) {
   }
 
   if (!res.ok) {
+    // Only for calls we actually authenticated: a 401 from login or register
+    // means "wrong password", not "your session died".
+    if (res.status === 401 && token) onUnauthorized?.();
     const message = json?.error || json?.errors?.form || "Something went wrong.";
     throw new ApiError(message, res.status, json?.errors);
   }

@@ -9,6 +9,8 @@ import { api } from "../../utils/api.js";
 vi.mock("../../utils/api.js", () => ({
   api: { getMine: vi.fn(), saveMine: vi.fn(), deleteMine: vi.fn() },
   ApiError: class ApiError extends Error {},
+  // useAuthStore registers its expired-session handler through this on import.
+  setUnauthorizedHandler: vi.fn(),
 }));
 
 vi.mock("qrcode", () => ({ default: { toDataURL: vi.fn().mockResolvedValue("data:image/png;base64,qr") } }));

@@ -7,3 +7,8 @@ server/data.sqlite-*
 
 # Local database backups produced by "npm run db:backup"
 server/backups/
+
+# Isolated database used by the Playwright suites
+server/e2e.sqlite*
+test-results/
+playwright-report/

@@ -95,7 +95,7 @@ export function AccountModal({ open, onClose }) {
   };
 
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal open={open} onClose={onClose} label="Your account">
       <h2 className="text-xl font-head font-bold text-white mb-1">Account</h2>
       <p className="text-sm text-slate-400 mb-5">Your login details and account settings.</p>
 

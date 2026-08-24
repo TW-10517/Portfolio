@@ -135,7 +135,7 @@ export function ResumeImportModal({ open, onClose }) {
   };
 
   return (
-    <Modal open={open} onClose={handleClose} wide>
+    <Modal open={open} onClose={handleClose} wide label="Import from resume">
       <h2 className="text-xl font-head font-bold text-white mb-1">Import from resume</h2>
       <p className="text-sm text-slate-400 mb-6">
         Runs entirely in your browser — the PDF is never uploaded anywhere. Text is extracted and matched with
