@@ -294,10 +294,26 @@ Hosted providers that require TLS work as-is: `pg` parses `?sslmode=require`
 straight from the connection string, so a Neon or Supabase URL needs nothing
 added.
 
-**What is still not covered:** TLS, and how a particular hosted provider
-behaves on idle timeouts and connection caps. `DATABASE_POOL_MAX` exists for
-the second of those, and an idle client dropped by the server is logged rather
-than taking the process down with an unhandled `error` event.
+**TLS is covered too.** `server/postgresTls.integration.test.js` puts a proxy
+in front of PGlite that answers the `SSLRequest` handshake — Postgres doesn't
+simply listen for TLS; the client asks first and the server replies with a
+single byte — and terminates TLS with a self-signed certificate. The suite
+checks that binary data survives the encrypted stream intact, that an
+unverifiable certificate is refused, and that a plaintext client is turned
+away, so none of the other assertions can pass without TLS actually happening.
+
+**Use `?sslmode=verify-full`** on a hosted database, not the more common
+`require`. pg 8 treats `require` as verify-full; pg 9 will switch it to libpq
+semantics, which encrypt without checking who answered. Relying on `require`
+means a dependency bump silently stops verifying, so the server warns once at
+boot if it sees one of the modes whose meaning is due to change. For a server
+on your own network with a self-signed certificate, `?sslmode=no-verify` says
+so honestly.
+
+**What is still not covered:** how a particular hosted provider behaves on
+idle timeouts and connection caps. `DATABASE_POOL_MAX` exists for that, and an
+idle client dropped by the server is logged rather than taking the process
+down with an unhandled `error` event.
 
 ## Email
 
@@ -325,7 +341,14 @@ cannot use.
 
 `server/mailSmtp.integration.test.js` runs a real SMTP server on a socket and
 sends to it with the real transport, so delivery is verified rather than
-assumed. TLS and a given provider's authentication are still not covered.
+assumed. `server/mailTls.integration.test.js` does it again encrypted, both
+ways round: implicit TLS on 465, and STARTTLS on 587 where the connection
+starts in the clear and upgrades. Certificates are verified by default —
+there's a test pinning that — and `SMTP_TLS_REJECT_UNAUTHORIZED=false` exists
+for a mail server on your own network with a self-signed certificate.
+
+What's left uncovered is authentication against a specific provider, and
+whatever that provider does about rate limits, SPF and DKIM.
 
 ## Share links and previews
 

@@ -62,6 +62,24 @@ export function toPgPlaceholders(text) {
   return out;
 }
 
+// pg 8 treats sslmode=require (and prefer, and verify-ca) as verify-full,
+// which is stricter than libpq. pg 9 will switch them to libpq semantics —
+// encrypt, but don't check who you're talking to. That is a security setting
+// getting quietly weaker on a dependency bump, so it is worth one line at
+// boot rather than a surprise later. verify-full and no-verify both mean the
+// same thing before and after, which is why they are what the README
+// recommends.
+const AMBIGUOUS_SSL_MODES = /[?&]sslmode=(require|prefer|verify-ca)(&|$)/i;
+
+function warnAboutSslMode(url) {
+  const match = AMBIGUOUS_SSL_MODES.exec(url);
+  if (!match) return;
+  console.warn(
+    `[db] sslmode=${match[1]} currently verifies the server certificate, but a future pg release ` +
+      `will stop. Use sslmode=verify-full to keep verifying, or sslmode=no-verify to say you don't want to.`
+  );
+}
+
 // ---------------------------------------------------------------- drivers --
 
 async function sqliteDriver() {
@@ -127,6 +145,7 @@ async function postgresDriver() {
   }
 
   const { default: pg } = await import("pg");
+  warnAboutSslMode(RAW_URL);
   // Free Postgres tiers cap concurrent connections far lower than a default
   // pool assumes, and one process quietly eating the whole allowance is a bad
   // way to find that out.

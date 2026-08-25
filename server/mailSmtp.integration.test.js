@@ -72,7 +72,7 @@ describe("SMTP delivery against a real server", () => {
   it("reports a refusal instead of throwing", async () => {
     const { deliverLink } = await import("./mail.js");
     // Nothing is listening on this port.
-    process.env.SMTP_PORT = "32588";
+    process.env.SMTP_PORT = "32589"; // nothing listens here, and nothing may
     const { setTransporter } = await import("./mail.js");
     setTransporter(null); // force a new connection with the changed port
     const result = await deliverLink("Password reset", "ada@example.com", "https://app.test/r");

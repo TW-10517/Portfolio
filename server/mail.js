@@ -79,6 +79,14 @@ async function smtpTransporter() {
     // fails to connect.
     secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === "true" : port === 465,
     auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD } : undefined,
+    tls: {
+      // Certificates are verified by default, and every hosted provider has a
+      // real one. This exists for a mail server on your own network with a
+      // self-signed certificate — set it and you are trusting the network
+      // path instead of the certificate, so only do that when you control
+      // the network.
+      rejectUnauthorized: process.env.SMTP_TLS_REJECT_UNAUTHORIZED !== "false",
+    },
   });
   return transporter;
 }
