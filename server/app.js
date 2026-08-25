@@ -5,10 +5,17 @@ import { authRouter } from "./routes/auth.js";
 import { portfolioRouter } from "./routes/portfolio.js";
 import { previewRouter } from "./routes/preview.js";
 import { imageRouter } from "./routes/images.js";
+import { trustProxySetting, warnOnUntrustedProxy } from "./trustProxy.js";
+import { securityHeaders } from "./securityHeaders.js";
 
 // Split from index.js so tests (and any future embedding, e.g. serverless)
 // can import the app without binding a port.
 export const app = express();
+
+// Must be set before anything reads req.ip — the rate limiters do.
+app.set("trust proxy", trustProxySetting());
+app.use(warnOnUntrustedProxy(app));
+app.use(securityHeaders);
 
 const allowedOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173").split(",").map((s) => s.trim());
 app.use(cors({ origin: allowedOrigins }));

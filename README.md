@@ -23,8 +23,8 @@ npm run dev         # frontend only
 npm run dev:server  # backend only (http://localhost:4000)
 npm run build       # production build to dist/
 npm run preview     # serve the production build locally
-npm test            # vitest run — 351 tests across 39 files
-npm run test:pg     # the server suites again, against real PostgreSQL (146 tests)
+npm test            # vitest run — 359 tests across 40 files
+npm run test:pg     # the server suites again, against real PostgreSQL (154 tests)
 npm run test:e2e    # playwright — 34 browser specs on isolated ports
 npm run test:all    # both
 ```
@@ -194,7 +194,7 @@ Custom CSS from the Theme tab is passed through `utils/sanitizeCss.js` before be
 npm test
 ```
 
-351 tests across 39 files (Vitest, plus Supertest for the API and Testing Library for components):
+359 tests across 40 files (Vitest, plus Supertest for the API and Testing Library for components):
 
 - **API integration** — `server/routes/auth.integration.test.js`, `portfolio.integration.test.js` (real HTTP against the Express app, real SQLite)
 - **Auth units** — `server/auth.test.js` (hashing, JWT, validation rules)
@@ -329,7 +329,7 @@ precisely so `datetime('now')` and `now()` never have to be reconciled).
 entire server suite — every integration test, byte-for-byte the same
 assertions — against real PostgreSQL 18 via
 [PGlite](https://pglite.dev), which compiles Postgres to WASM and runs
-in-process with no server to install. 146 tests, both backends, in CI.
+in-process with no server to install. 154 tests, both backends, in CI.
 
 `server/postgresTcp.integration.test.js` goes one further and puts PGlite
 behind a **TCP socket speaking the real PostgreSQL wire protocol**, so the
@@ -522,9 +522,36 @@ The frontend is a static build (`npm run build` → `dist/`) — deploy to Netli
 - `JWT_SECRET` — a long random string (**required**; there's an insecure dev fallback otherwise)
 - `CORS_ORIGIN` — your real frontend origin(s); the API rejects anything not listed
 - `VITE_API_URL` — where the browser should reach the API, if it isn't `localhost:4000`
+- `TRUST_PROXY` — **set this to `1` on any managed host.** See below; getting it wrong is a site-wide lockout in one direction and a bypassed rate limiter in the other
 - `FRONTEND_URL` — the base for reset/verification links, and where `/p/:slug` sends a human after a crawler has read its preview tags
 
 (`legacy-static/` isn't part of the Vite build and would need deploying separately.)
+
+## Behind a reverse proxy
+
+Every managed host puts a proxy in front of the app, and Express believes
+`X-Forwarded-For` only when told to. Untold, `req.ip` is the proxy's address
+for every visitor, so all of them share one rate-limit bucket — **one person
+mistyping their password locks out the entire site**, for fifteen minutes, and
+across a restart because the counters are persisted. There is a test that
+demonstrates exactly that.
+
+The opposite mistake is worse: trusting the header unconditionally lets any
+client claim any address and walk past every limit. So it is explicit —
+`TRUST_PROXY=1` for the usual single-proxy setup, `2` behind a CDN, unset when
+the app is exposed directly. If requests arrive carrying `X-Forwarded-For`
+while it is unset, the server says so once rather than failing silently.
+
+The server also shuts down on `SIGTERM` rather than being killed mid-response:
+hosts deploy by sending it and killing what's left a few seconds later, so
+without it every deploy cuts in-flight requests and closes SQLite by process
+death instead of checkpointing its write-ahead log.
+
+Responses carry `X-Content-Type-Options`, `X-Frame-Options: DENY`,
+`Referrer-Policy: strict-origin-when-cross-origin` and a `Permissions-Policy`
+that turns off camera, microphone, geolocation and payment. HSTS is sent only
+when the visitor actually arrived over TLS — from a dev server it would pin
+localhost to HTTPS in your own browser, which is annoying to undo.
 
 ## Security and accessibility
 
