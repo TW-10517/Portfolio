@@ -82,3 +82,31 @@ describe("validatePortfolioData", () => {
     ok({ a: null, b: 42, c: true, d: [null, 0, false] });
   });
 });
+
+describe("data URLs with no parameters", () => {
+  it("accepts an image data URL that carries no media-type parameters", () => {
+    // "data:image/png,…" is valid and is what percent-encoding produces
+    // instead of base64. The rule required a semicolon, so these were
+    // rejected and the entire save failed — which is how the sample
+    // portfolio's own placeholder art became unsaveable.
+    expect(validatePortfolioData({ profile: { photo: "data:image/png,abc" } })).toBeNull();
+    expect(
+      validatePortfolioData({ profile: { photo: "data:image/svg+xml,%3Csvg%3E%3C/svg%3E" } })
+    ).toBeNull();
+  });
+
+  it("still accepts the base64 form", () => {
+    expect(validatePortfolioData({ profile: { photo: "data:image/png;base64,abc" } })).toBeNull();
+  });
+
+  it("still rejects a data URL that isn't an image or a PDF", () => {
+    for (const bad of [
+      "data:text/html,<script>alert(1)</script>",
+      "data:text/html;base64,PHNjcmlwdD4=",
+      "data:application/javascript,alert(1)",
+      "data:,plain",
+    ]) {
+      expect(validatePortfolioData({ profile: { photo: bad } }), bad).toBeTruthy();
+    }
+  });
+});

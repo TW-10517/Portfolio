@@ -4,8 +4,11 @@ import { useAuthStore } from "../store/useAuthStore.js";
 import { ApiError } from "../utils/api.js";
 import { Field, TextInput } from "../components/ui/Field.jsx";
 import { Button } from "../components/ui/Button.jsx";
+import { usePrefetchEditor } from "../hooks/usePrefetchEditor.js";
 
 export function LoginPage() {
+  // Both forms lead to the editor; start fetching it while they type.
+  usePrefetchEditor();
   const login = useAuthStore((s) => s.login);
   // Explains why someone who was signed in a moment ago is looking at a login
   // form. Without it the app just silently forgets you.

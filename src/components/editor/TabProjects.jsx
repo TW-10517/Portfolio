@@ -5,6 +5,7 @@ import { StringListManager } from "../ui/StringListManager.jsx";
 import { ReorderList } from "../ui/ReorderList.jsx";
 import { TabShell } from "./TabShell.jsx";
 import { uid } from "../../utils/uid.js";
+import { placeholderImage } from "../../utils/placeholderImage.js";
 
 const CATEGORIES = ["Web App", "Mobile", "Data Science", "Open Source", "Design", "Other"];
 
@@ -22,7 +23,7 @@ export function TabProjects() {
     shortDesc: "",
     fullDesc: "",
     tech: [],
-    images: ["https://placehold.co/900x650/12141f/00c9ff?text=Project"],
+    images: [placeholderImage({ width: 900, height: 650, label: "Project" })],
     demoUrl: "",
     repoUrl: "",
     features: [],

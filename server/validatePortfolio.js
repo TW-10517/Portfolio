@@ -25,7 +25,12 @@ const MAX_NODES = 50000;
 // "java\tscript:" navigates as "javascript:". Strip before testing.
 const CONTROL_CHARS = /[\u0000-\u001F\u007F-\u009F]/g;
 const DANGEROUS_SCHEME = /^(?:javascript|vbscript|livescript|mocha):/i;
-const DANGEROUS_DATA = /^data:(?!image\/(?:png|jpeg|jpg|gif|webp|svg\+xml);|application\/pdf[;,])/i;
+// The image branch required a semicolon after the media type, so a data URL
+// with no parameters — "data:image/png,…", which is perfectly valid and what
+// you get from encodeURIComponent rather than base64 — was classed as
+// dangerous and the whole save rejected. The PDF branch already allowed both
+// separators; this one didn't.
+const DANGEROUS_DATA = /^data:(?!image\/(?:png|jpeg|jpg|gif|webp|svg\+xml)[;,]|application\/pdf[;,])/i;
 
 function isDangerousUrlString(value) {
   const cleaned = value.replace(CONTROL_CHARS, "").trim();

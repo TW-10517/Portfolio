@@ -70,12 +70,15 @@ test.describe("editor", () => {
     await upload.setInputFiles({ name: "huge.jpg", mimeType: "image/jpeg", buffer });
 
     const photo = await page.evaluate(async () => {
-      // The default portfolio ships a placeholder photo URL, so "truthy" isn't
-      // the signal — wait for it to be replaced by the upload.
+      // The default portfolio ships a placeholder photo, so "truthy" isn't the
+      // signal — wait for a stored-image URL specifically. Matching on "not
+      // the placeholder" broke the moment the placeholder stopped being a
+      // placehold.co link and became an inline SVG: the test would have read
+      // the default and called it the upload.
       const read = () => {
         const v = JSON.parse(localStorage.getItem("portfolio-builder:draft") || "null")
           ?.state?.data?.profile?.photo;
-        return typeof v === "string" && !v.startsWith("https://placehold.co") ? v : null;
+        return typeof v === "string" && v.startsWith("/api/images/") ? v : null;
       };
       for (let i = 0; i < 100 && !read(); i += 1) {
         await new Promise((r) => setTimeout(r, 100));

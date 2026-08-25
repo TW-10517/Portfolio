@@ -1,4 +1,5 @@
 import { uid } from "../utils/uid.js";
+import { placeholderImage } from "../utils/placeholderImage.js";
 
 export const FONT_OPTIONS = [
   "Space Grotesk",
@@ -28,7 +29,7 @@ export function createDefaultPortfolio() {
       name: "Alex Rivera",
       roles: "Software Engineer, Creative Developer, Data Enthusiast",
       tagline: "Crafting digital experiences that think, move, and feel alive.",
-      photo: "https://placehold.co/500x500/12141f/00c9ff?text=Alex",
+      photo: placeholderImage({ width: 500, height: 500, label: "Alex" }),
       location: "San Francisco, CA",
       email: "hello@alexrivera.dev",
       phone: "+1 (555) 012-3456",
@@ -111,7 +112,7 @@ export function createDefaultPortfolio() {
         shortDesc: "Real-time data dashboards for growth teams.",
         fullDesc: "A live analytics dashboard on top of a streaming event pipeline, with sub-second updates and custom cohort builders.",
         tech: ["React", "Node.js", "D3.js"],
-        images: ["https://placehold.co/900x650/12141f/00c9ff?text=Nimbus+Analytics"],
+        images: [placeholderImage({ width: 900, height: 650, label: "Nimbus Analytics" })],
         demoUrl: "",
         repoUrl: "",
         features: ["Real-time cohort analysis", "Custom funnel builder", "Exportable reports"],
@@ -124,7 +125,7 @@ export function createDefaultPortfolio() {
         shortDesc: "Cross-platform fitness tracker with social challenges.",
         fullDesc: "A social-first fitness experience with friend challenges and streak mechanics, boosting 30-day retention by 34%.",
         tech: ["React Native", "Firebase"],
-        images: ["https://placehold.co/900x650/12141f/7b61ff?text=Pulse+Fitness"],
+        images: [placeholderImage({ width: 900, height: 650, label: "Pulse Fitness", fg: "#7b61ff" })],
         demoUrl: "",
         repoUrl: "",
         features: ["Friend challenges", "Adaptive workout plans", "Offline-first sync"],
@@ -149,7 +150,7 @@ export function createDefaultPortfolio() {
         name: "Sarah Mitchell",
         role: "VP of Engineering",
         company: "Nimbus Labs",
-        photo: "https://placehold.co/150x150/181b29/00c9ff?text=SM",
+        photo: placeholderImage({ width: 150, height: 150, label: "SM", bg: "#181b29" }),
         rating: 5,
       },
     ],
@@ -163,7 +164,7 @@ export function createDefaultPortfolio() {
           date: "2026-08-12",
           category: "Engineering",
           url: "#",
-          thumbnail: "https://placehold.co/600x340/181b29/00c9ff?text=Blog",
+          thumbnail: placeholderImage({ width: 600, height: 340, label: "Blog", bg: "#181b29" }),
         },
       ],
     },

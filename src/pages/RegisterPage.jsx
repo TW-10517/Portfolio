@@ -4,8 +4,11 @@ import { useAuthStore } from "../store/useAuthStore.js";
 import { ApiError } from "../utils/api.js";
 import { Field, TextInput } from "../components/ui/Field.jsx";
 import { Button } from "../components/ui/Button.jsx";
+import { usePrefetchEditor } from "../hooks/usePrefetchEditor.js";
 
 export function RegisterPage() {
+  // Both forms lead to the editor; start fetching it while they type.
+  usePrefetchEditor();
   const register = useAuthStore((s) => s.register);
   const navigate = useNavigate();
   const [form, setForm] = useState({ name: "", email: "", password: "", confirm: "" });

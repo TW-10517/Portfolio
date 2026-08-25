@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { Link } from "react-router-dom";
 import { usePortfolioStore } from "../../store/usePortfolioStore.js";
 import { PortfolioView } from "../portfolio/PortfolioView.jsx";
@@ -10,7 +10,18 @@ const DEVICES = {
   mobile: { width: 390, label: "Mobile", icon: "📲" },
 };
 
-export function PreviewPane() {
+// Memoised, and it matters more than it looks.
+//
+// PreviewPane takes no props, but React re-renders children whenever the
+// parent renders — and EditorPage re-renders on every tab click, every
+// resize drag, every banner dismissal. Each of those was re-rendering the
+// entire portfolio: navbar, ten sections, all their animations. Switching
+// from Profile to Skills cost about half a second of work that could not
+// change a single pixel of the preview.
+//
+// With no props, memo means "only re-render when the store says the data
+// changed", which is exactly right.
+export const PreviewPane = memo(function PreviewPane() {
   const data = usePortfolioStore((s) => s.data);
   const [device, setDevice] = useState("desktop");
   const [scrollEl, setScrollEl] = useState(null);
@@ -52,4 +63,4 @@ export function PreviewPane() {
       </div>
     </div>
   );
-}
+});
