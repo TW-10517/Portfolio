@@ -99,6 +99,23 @@ because a cloud API is happy with several in flight; Ollama 2, because a model
 on your own GPU doesn't really overlap but one request tokenising while another
 runs does help; the offline writer 1, since there is no I/O to overlap.
 
+Measured against Ollama running `qwen2.5:3b` locally, seven scenes:
+
+| | |
+|---|---|
+| A new combination | ~20–36s — the model's speed, not the app's |
+| A combination already seen | 0 model calls |
+| Concurrency 2 vs one-at-a-time | 19.8s vs 23.8s (1.20x) |
+
+Concurrency was never going to be the win: the model runs on your own
+hardware, so requests don't genuinely overlap and only setup and tokenising
+do. Note the numbers above are **call counts, not wall clock**. Timing this
+from the outside is unreliable — the "Writing…" indicator never renders when a
+regeneration is served from memory, so a probe waiting for it to appear
+reports its own timeout as the cost of the switch, and one that skips the wait
+reports a number far too small. Counting how many times the provider is
+actually asked is the measurement that means something.
+
 Three things the tests pin down, because each is a way to be subtly wrong:
 results stay in **plan order** however they finish (order is the video), a
 **fallback is never cached** (it isn't what your chosen provider would say once

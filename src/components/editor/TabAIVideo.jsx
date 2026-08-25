@@ -490,7 +490,7 @@ export function TabAIVideo() {
     try {
       if (!withNarration && fastAvailable) {
         const started = performance.now();
-        const { blob, mimeType, label } = await encodeScenePlan(canvasRef.current, scenePlan, data, {
+        const { blob, label } = await encodeScenePlan(canvasRef.current, scenePlan, data, {
           theme: data.theme,
           showCaptions,
           onProgress: setExportProgress,
