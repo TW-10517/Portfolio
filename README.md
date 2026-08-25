@@ -21,8 +21,8 @@ npm run dev         # frontend only
 npm run dev:server  # backend only (http://localhost:4000)
 npm run build       # production build to dist/
 npm run preview     # serve the production build locally
-npm test            # vitest run — 323 tests across 33 files
-npm run test:pg     # the server suites again, against real PostgreSQL (134 tests)
+npm test            # vitest run — 335 tests across 36 files
+npm run test:pg     # the server suites again, against real PostgreSQL (146 tests)
 npm run test:e2e    # playwright — 33 browser specs on isolated ports
 npm run test:all    # both
 ```
@@ -134,7 +134,7 @@ Custom CSS from the Theme tab is passed through `utils/sanitizeCss.js` before be
 npm test
 ```
 
-323 tests across 33 files (Vitest, plus Supertest for the API and Testing Library for components):
+335 tests across 36 files (Vitest, plus Supertest for the API and Testing Library for components):
 
 - **API integration** — `server/routes/auth.integration.test.js`, `portfolio.integration.test.js` (real HTTP against the Express app, real SQLite)
 - **Auth units** — `server/auth.test.js` (hashing, JWT, validation rules)
@@ -269,7 +269,7 @@ precisely so `datetime('now')` and `now()` never have to be reconciled).
 entire server suite — every integration test, byte-for-byte the same
 assertions — against real PostgreSQL 18 via
 [PGlite](https://pglite.dev), which compiles Postgres to WASM and runs
-in-process with no server to install. 134 tests, both backends, in CI.
+in-process with no server to install. 146 tests, both backends, in CI.
 
 `server/postgresTcp.integration.test.js` goes one further and puts PGlite
 behind a **TCP socket speaking the real PostgreSQL wire protocol**, so the
@@ -413,6 +413,47 @@ Your own content is never translated. Names, companies, job titles and quotes
 are reproduced exactly as you wrote them — the writer supplies the sentence
 around them and nothing else, which is the same rule that stops it inventing
 facts.
+
+## Performance
+
+Measured on Slow 4G with a 4x CPU throttle — roughly a mid-range phone on
+mobile data, which is what "how fast is it" ought to mean.
+
+| | Before | After |
+|---|---|---|
+| Sign up → editor usable | 4,627ms | ~2,400ms |
+| Tab switch, script time (x12) | 219–242ms | 95–136ms |
+| Third-party requests on first load | 6 | 0 |
+
+Four things were costing that, found by reading the request waterfall rather
+than by guessing:
+
+- **The editor downloaded only after the form was submitted.** It's a lazy
+  route, so ~292KB of chunks started from a standing start at the exact moment
+  the user was waiting. Typing a name, an email and a password takes several
+  seconds during which the connection does nothing, so `usePrefetchEditor`
+  starts the fetch when the login or register page mounts. Fire-and-forget: if
+  it fails, the normal lazy import simply tries again.
+- **The sample portfolio's placeholder art came from placehold.co** — five
+  requests to a third party before a brand-new account's own content finished
+  drawing. Generated locally now (`src/utils/placeholderImage.js`).
+- **The font stylesheet is injected after the theme is known**, so its DNS
+  lookup and TLS handshake started late and on the critical path. Two
+  `preconnect` hints in `index.html` cost nothing and remove that from the wait.
+- **`PreviewPane` re-rendered on every tab click.** It takes no props, but
+  React re-renders children whenever the parent does, and `EditorPage`
+  re-renders on every tab change. Memoising it halved the scripting per switch.
+
+A note on that last one, because the obvious measurement was wrong: a
+`MutationObserver` over the preview counted *identical* DOM mutations with and
+without the memo — React was re-rendering, but reconciliation produced no DOM
+change. The win is scripting time, and it only showed up once the measurement
+moved off wall clock (which varied 2x between identical runs on a busy machine)
+and onto CDP's `ScriptDuration` counter.
+
+**Still slow, and not a tweak to fix:** roughly 1.5s of CPU between the API
+returning and the editor being usable. That is rendering all ten preview
+sections of the sample portfolio at 4x throttle.
 
 ## Deploying
 
