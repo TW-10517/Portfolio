@@ -71,7 +71,7 @@ export function ResetPasswordPage() {
             </Field>
             {errors.confirm && <p className="text-xs text-red-400 -mt-3 mb-3">{errors.confirm}</p>}
 
-            {errors.form && <p className="text-sm text-red-400 mb-4">{errors.form}</p>}
+            {errors.form && <p role="alert" className="text-sm text-red-400 mb-4">{errors.form}</p>}
 
             <Button type="submit" disabled={submitting} className="w-full mt-2">
               {submitting ? "Updating…" : "Update password"}

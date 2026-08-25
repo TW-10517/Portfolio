@@ -36,33 +36,66 @@ test.describe("editor", () => {
 
   test("an oversized image is downscaled rather than rejected", async ({ page }) => {
     // Portfolios are stored as JSON with images inline, so a straight-from-the
-    // -camera photo used to push the document past the API's size cap.
+    // -camera photo used to push the document past the API's size cap. Driven
+    // through the real upload control rather than by importing the module:
+    // the suite runs against a production bundle, where /src paths don't exist.
     await register(page);
-    const result = await page.evaluate(async () => {
-      const mod = await import("/src/utils/exportImport.js");
+    await page.click("text=Profile");
+
+    // A gradient with mild noise, encoded as JPEG — roughly what comes off a
+    // phone. A flat fill would compress to nothing and the size assertion
+    // below would pass for the wrong reason; pure noise makes a PNG so large
+    // the component's own 12MB guard rejects it before any downscaling.
+    const dataUrl = await page.evaluate(async () => {
       const c = document.createElement("canvas");
       c.width = 3000;
       c.height = 2000;
       const ctx = c.getContext("2d");
       const img = ctx.createImageData(c.width, c.height);
       for (let i = 0; i < img.data.length; i += 4) {
-        img.data[i] = (i * 7) % 255;
-        img.data[i + 1] = (i * 13) % 255;
-        img.data[i + 2] = (i * 29) % 255;
+        const base = (((i / 4) % c.width) / c.width) * 200;
+        img.data[i] = base + ((i * 7) % 55);
+        img.data[i + 1] = base + ((i * 13) % 55);
+        img.data[i + 2] = 255 - base;
         img.data[i + 3] = 255;
       }
       ctx.putImageData(img, 0, 0);
-      const original = c.toDataURL("image/png");
-      const shrunk = await mod.downscaleDataUrl(original);
-      const dims = await new Promise((res) => {
-        const i = new Image();
-        i.onload = () => res([i.naturalWidth, i.naturalHeight]);
-        i.src = shrunk;
-      });
-      return { originalBytes: original.length, shrunkBytes: shrunk.length, dims, max: mod.MAX_IMAGE_DIMENSION };
+      return c.toDataURL("image/jpeg", 0.9);
     });
+    const buffer = Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64");
 
-    expect(result.dims[0]).toBe(result.max);
-    expect(result.shrunkBytes).toBeLessThan(result.originalBytes / 3);
+    const upload = page.locator('input[type="file"][accept="image/*"]').first();
+    await upload.setInputFiles({ name: "huge.jpg", mimeType: "image/jpeg", buffer });
+
+    const photo = await page.evaluate(async () => {
+      // The default portfolio ships a placeholder photo URL, so "truthy" isn't
+      // the signal — wait for it to become an inline data URL.
+      const read = () => {
+        const v = JSON.parse(localStorage.getItem("portfolio-builder:draft") || "null")
+          ?.state?.data?.profile?.photo;
+        return typeof v === "string" && v.startsWith("data:") ? v : null;
+      };
+      for (let i = 0; i < 100 && !read(); i += 1) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      return read();
+    });
+    expect(photo, "the upload never reached the store").toBeTruthy();
+
+    const dims = await page.evaluate(
+      (src) =>
+        new Promise((res) => {
+          const i = new Image();
+          i.onload = () => res([i.naturalWidth, i.naturalHeight]);
+          i.src = src;
+        }),
+      photo
+    );
+
+    // 1600 is MAX_IMAGE_DIMENSION in src/utils/exportImport.js.
+    expect(dims).toEqual([1600, 1067]);
+    // Base64 costs ~4/3, so compare decoded bytes against the uploaded file.
+    const storedBytes = (photo.length - photo.indexOf(",") - 1) * 0.75;
+    expect(storedBytes).toBeLessThan(buffer.length / 3);
   });
 });

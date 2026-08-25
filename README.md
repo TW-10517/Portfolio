@@ -21,7 +21,9 @@ npm run dev         # frontend only
 npm run dev:server  # backend only (http://localhost:4000)
 npm run build       # production build to dist/
 npm run preview     # serve the production build locally
-npm test            # vitest run — 130 tests across 11 files
+npm test            # vitest run — 233 tests across 22 files
+npm run test:e2e    # playwright — 32 browser specs on isolated ports
+npm run test:all    # both
 ```
 
 No configuration is needed for local dev: the SQLite file is auto-created and safe defaults cover every environment variable. See `.env.example` for what to set before deploying.
@@ -130,13 +132,14 @@ Custom CSS from the Theme tab is passed through `utils/sanitizeCss.js` before be
 npm test
 ```
 
-206 tests across 19 files (Vitest, plus Supertest for the API and Testing Library for components):
+233 tests across 22 files (Vitest, plus Supertest for the API and Testing Library for components):
 
 - **API integration** — `server/routes/auth.integration.test.js`, `portfolio.integration.test.js` (real HTTP against the Express app, real SQLite)
 - **Auth units** — `server/auth.test.js` (hashing, JWT, validation rules)
 - **AI** — `factGuard.test.js` (the grounding guard), `LocalProvider.test.js` (word-cap sentence trimming)
 - **Video** — `sceneBuilder.test.js`, `timing.test.js`, `exportFormat.test.js`, `player.test.js`
-- **Components** — `ShareModal.test.jsx` (publish state and view count), `RequireAuth.test.jsx` (the editor guard), `ImageUpload.test.jsx` (upload limits and failure handling)
+- **Components** — `ShareModal.test.jsx` (publish state and view count), `RequireAuth.test.jsx` (the editor guard), `ImageUpload.test.jsx` (upload limits and failure handling), `Modal.test.jsx` (focus trap, Escape, focus restore)
+- **Store** — `usePortfolioStore.test.js`, `useAuthStore.test.js` (expired-session handling)
 - **Security** — `sanitizeUrl.test.js` (link scheme allowlist), `server/validatePortfolio.test.js` (save-time structural checks), `server/SqliteRateLimitStore.test.js` (persistent rate limiting)
 - **Utils** — `slug.test.js`, `sanitizeCss.test.js`, `textMetrics.test.js`, `exportImport.test.js`
 
@@ -144,9 +147,40 @@ Component suites opt into a DOM per file with a `// @vitest-environment jsdom`
 docblock; everything else runs in plain Node, so the fast majority of the suite
 skips jsdom's startup cost.
 
-`.github/workflows/ci.yml` runs the suite and a production build on every push
-and pull request, and asserts that the server still refuses to boot in
-production with the insecure dev `JWT_SECRET`.
+### Browser end-to-end tests
+
+```bash
+npm run test:e2e
+```
+
+32 Playwright specs in `e2e/`, because almost every serious bug this project
+has had was invisible to unit tests: narration cut off mid-sentence, an export
+that claimed to have audio and didn't, a share modal that hid your own link
+when you reopened it, focus escaping a dialog, a scene duration field that
+turned "30" into "3025".
+
+- `auth.spec.js` (9) — register, login, logout, guard redirects, session expiry
+- `share.spec.js` (7) — publish, republish, unpublish, the public share page
+- `sync.spec.js` (4) — edits surviving a reload and reaching a second browser context
+- `a11y.spec.js` (4) — axe-core over login, both editor modes, the portfolio
+- `editor.spec.js` (4) — tab navigation, adding and removing entries, autosave
+- `video.spec.js` (4) — script generation, a non-blank rendered frame, retiming a scene, playback
+
+`playwright.config.js` starts both servers itself on ports 4001/5174 against
+`server/e2e.sqlite`, so a run never touches the dev database or spends the dev
+server's rate-limit budget. The frontend is a production build served by `vite
+preview` rather than the dev server: on-demand module transforms made a cold
+lazy chunk slow enough under two workers to time out assertions, and serving
+the bundle means the suite exercises what users actually download. (Rate limits are persisted now, so a shared
+database meant repeated runs eventually tripped the registration limiter.) A
+single run also registers ~35 accounts from one address, more than the 30/15min
+production budget allows, so the config sets `RATE_LIMIT_SCALE=20` — a knob
+`server/rateLimit.js` ignores entirely when `NODE_ENV=production`, so it can't
+weaken a live server.
+
+`.github/workflows/ci.yml` runs the Vitest suite, a production build and the
+Playwright suite on every push and pull request, and asserts that the server
+still refuses to boot in production with the insecure dev `JWT_SECRET`.
 
 ### Clearing test accounts
 
@@ -225,6 +259,23 @@ controls.
 lives in process memory, so every restart handed out a fresh allowance and
 nothing was shared between workers. `server/SqliteRateLimitStore.js` keeps them
 in the database that is already the source of truth.
+
+**Dialogs trap focus.** `src/components/ui/Modal.jsx` moves focus into the
+panel on open, cycles Tab and Shift+Tab within it, closes on Escape, and
+restores focus to whatever opened it. Each dialog carries
+`role="dialog" aria-modal="true"` and its own label. Visibility is decided from
+computed style rather than `getClientRects()`, which returns empty under a test
+renderer and would silently degrade the trap to "focus the panel".
+
+**An expired or revoked token ends the session cleanly.** `src/utils/api.js`
+reports any 401 on an authenticated request to `useAuthStore`, which clears the
+token and flags `sessionExpired` so the user is told why they were signed out
+instead of watching saves fail silently.
+
+**Dependencies are clean.** `npm audit` reports zero vulnerabilities; getting
+there needed major bumps of `vite` (5 → 8) and `react-router-dom` (6 → 7) plus
+a `tar` override in `package.json` for a transitive advisory with no upstream
+fix.
 
 **Accessibility is audited with axe-core.** The login page, both editor modes
 and the rendered portfolio report zero violations at every impact level. Getting

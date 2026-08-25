@@ -45,14 +45,22 @@ export default defineConfig({
         PORT: String(API_PORT),
         DATABASE_URL: "./server/e2e.sqlite",
         JWT_SECRET: "e2e-only-secret-not-used-in-production",
+        // ~35 registrations per run from one address; the production budget is 30.
+        RATE_LIMIT_SCALE: "20",
         CORS_ORIGIN: WEB,
       },
     },
     {
-      command: `npm run dev -- --port ${WEB_PORT} --strictPort`,
+      // A production build served by `vite preview`, not the dev server.
+      // Vite transforms modules on demand, so under two workers a cold lazy
+      // chunk could take long enough that assertions timed out waiting for
+      // the editor — a flake with no bug behind it. This also means the
+      // suite exercises the bundle users actually download. VITE_API_URL is
+      // inlined at build time, so it belongs on the build, not the serve.
+      command: `npm run build && npm run preview -- --port ${WEB_PORT} --strictPort`,
       url: WEB,
       reuseExistingServer: false,
-      timeout: 90_000,
+      timeout: 120_000,
       env: { VITE_API_URL: API_BASE },
     },
   ],

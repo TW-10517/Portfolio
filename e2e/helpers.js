@@ -15,7 +15,24 @@ export const PASSWORD = "TestPass123";
 // the editor being on screen — waiting for the URL alone lands on the
 // Suspense fallback and reads an empty page.
 export async function waitForEditor(page) {
-  await page.waitForURL("**/#/editor");
+  // Race the redirect against the form's error banner. Waiting on the URL
+  // alone meant a rejected submit (a 429, a duplicate address) sat there
+  // until the test timeout — five minutes of nothing, and a failure message
+  // that named the navigation rather than the reason.
+  const failed = page.getByRole("alert").first();
+  const NEVER = new Promise(() => {});
+  await Promise.race([
+    page.waitForURL("**/#/editor"),
+    failed.waitFor({ state: "visible", timeout: 30_000 }).then(
+      async () => {
+        throw new Error(`Auth form rejected the submit: ${await failed.innerText()}`);
+      },
+      // No banner within 30s just means this isn't the failure mode; hand
+      // back a promise that never settles so the race is decided by the
+      // navigation, and nothing rejects after the test has moved on.
+      () => NEVER
+    ),
+  ]);
   await expect(page.locator('nav[aria-label="Editor sections"]')).toBeVisible();
 }
 

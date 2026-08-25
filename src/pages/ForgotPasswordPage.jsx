@@ -54,7 +54,7 @@ export function ForgotPasswordPage() {
             <Field label="Email">
               <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" autoFocus />
             </Field>
-            {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
+            {error && <p role="alert" className="text-sm text-red-400 mb-4">{error}</p>}
             <Button type="submit" disabled={submitting} className="w-full mt-2">
               {submitting ? "Sending…" : "Send reset link"}
             </Button>

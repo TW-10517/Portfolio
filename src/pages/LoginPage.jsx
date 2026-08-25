@@ -98,7 +98,7 @@ export function LoginPage() {
           {errors.password && <p className="text-xs text-red-400 mb-3">{errors.password}</p>}
           {!errors.password && <div className="mb-3" />}
 
-          {errors.form && <p className="text-sm text-red-400 mb-4">{errors.form}</p>}
+          {errors.form && <p role="alert" className="text-sm text-red-400 mb-4">{errors.form}</p>}
 
           <Button type="submit" disabled={submitting} className="w-full mt-2">
             {submitting ? "Logging in…" : "Log in"}

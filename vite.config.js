@@ -14,5 +14,9 @@ export default defineConfig({
     // state leaks between tests.
     globals: true,
     setupFiles: ["./test/setup.js"],
+    // e2e/*.spec.js belong to Playwright. Vitest's default include globs
+    // match them too, and importing @playwright/test outside a Playwright
+    // runner throws, so `npm test` reported six phantom failures.
+    exclude: ["**/node_modules/**", "**/dist/**", "e2e/**"],
   },
 });

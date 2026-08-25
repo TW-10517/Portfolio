@@ -3,10 +3,21 @@ import { SqliteRateLimitStore } from "./SqliteRateLimitStore.js";
 
 const WINDOW_MS = 15 * 60 * 1000;
 
+// The browser suite registers roughly as many accounts in one run as a real
+// user would in a lifetime, which legitimately exhausted the 30/15min budget
+// and made the tail of the suite fail on a 429. Tests raise the ceiling with
+// RATE_LIMIT_SCALE; production ignores it, so a stray environment variable
+// can't quietly switch off a brute-force control on a live server.
+function scale() {
+  if (process.env.NODE_ENV === "production") return 1;
+  const n = Number(process.env.RATE_LIMIT_SCALE);
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+}
+
 function limiter(limit) {
   return rateLimit({
     windowMs: WINDOW_MS,
-    limit,
+    limit: limit * scale(),
     // Persisted rather than in-memory, so a restart doesn't hand out a fresh
     // allowance and separate processes share one counter.
     store: new SqliteRateLimitStore(),
