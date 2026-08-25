@@ -23,8 +23,8 @@ npm run dev         # frontend only
 npm run dev:server  # backend only (http://localhost:4000)
 npm run build       # production build to dist/
 npm run preview     # serve the production build locally
-npm test            # vitest run — 359 tests across 40 files
-npm run test:pg     # the server suites again, against real PostgreSQL (154 tests)
+npm test            # vitest run — 372 tests across 41 files
+npm run test:pg     # the server suites again, against real PostgreSQL (167 tests)
 npm run test:e2e    # playwright — 34 browser specs on isolated ports
 npm run test:all    # both
 ```
@@ -194,7 +194,7 @@ Custom CSS from the Theme tab is passed through `utils/sanitizeCss.js` before be
 npm test
 ```
 
-359 tests across 40 files (Vitest, plus Supertest for the API and Testing Library for components):
+372 tests across 41 files (Vitest, plus Supertest for the API and Testing Library for components):
 
 - **API integration** — `server/routes/auth.integration.test.js`, `portfolio.integration.test.js` (real HTTP against the Express app, real SQLite)
 - **Auth units** — `server/auth.test.js` (hashing, JWT, validation rules)
@@ -204,6 +204,7 @@ npm test
 - **Store** — `usePortfolioStore.test.js`, `useAuthStore.test.js` (expired-session handling)
 - **Security** — `sanitizeUrl.test.js` (link scheme allowlist), `server/validatePortfolio.test.js` (save-time structural checks), `server/RateLimitStore.test.js` (persistent rate limiting, on both backends)
 - **Database** — `server/sql.test.js` (placeholder renumbering); every `server/**` suite also runs against PostgreSQL via `npm run test:pg`
+- **Operations** — `server/deployment.integration.test.js` (proxy trust in both directions, security headers), `server/observability.integration.test.js` (redaction, request ids, a health check that fails when the database does)
 - **Sharing** — `server/preview.test.js` and `server/routes/preview.integration.test.js` (per-portfolio link previews, and that a private one leaks nothing)
 - **Email** — `server/mail.test.js` (routing, both body parts, failures that stay quiet), `server/mailSmtp.integration.test.js` (delivery to a real SMTP server)
 - **Images** — `server/routes/images.integration.test.js` (upload, sniffing, dedup, immutable serving), `server/imageGc.test.js` (deletion actually deletes), `imageUrl.test.js`, `inlineStoredImages.test.js`
@@ -329,7 +330,7 @@ precisely so `datetime('now')` and `now()` never have to be reconciled).
 entire server suite — every integration test, byte-for-byte the same
 assertions — against real PostgreSQL 18 via
 [PGlite](https://pglite.dev), which compiles Postgres to WASM and runs
-in-process with no server to install. 154 tests, both backends, in CI.
+in-process with no server to install. 167 tests, both backends, in CI.
 
 `server/postgresTcp.integration.test.js` goes one further and puts PGlite
 behind a **TCP socket speaking the real PostgreSQL wire protocol**, so the
@@ -515,6 +516,32 @@ and onto CDP's `ScriptDuration` counter.
 returning and the editor being usable. That is rendering all ten preview
 sections of the sample portfolio at 4x throttle.
 
+## Operating it
+
+**Logs are one JSON line per event** (`server/logger.js`), which every host's
+log viewer can already filter. A 500 used to print a stack trace and nothing
+else — no id, no status, no timing — and on a managed host that scrolls away
+and is gone at the next redeploy.
+
+Every request gets an id, returned as `X-Request-Id` and included in the body
+of any 5xx. When someone says "it failed when I published", that id is the
+thing to search for. An id the proxy already set is kept, so one request is one
+id across every hop.
+
+**Nothing is sent anywhere.** Secrets are redacted by key name, and the user's
+own writing — `data`, `email`, `bio`, `photo` — is omitted outright, because a
+stack trace is not a good enough reason to copy someone's portfolio into an
+operational log. `ERROR_WEBHOOK_URL` will POST error entries to Sentry, Slack
+or your own endpoint, and stays off unless you set it. `LOG_LEVEL` and
+`LOG_FORMAT` (`json` / `pretty`) are there too; pretty is the default on a TTY.
+
+**`/api/health` actually checks the database.** It runs `SELECT 1` and answers
+`503` if that fails. A health check that returns `ok:true` from a process whose
+database has gone is worse than none at all — the monitor stays green through
+the one outage it exists to catch. It also reports uptime and which backend is
+in use. Point any uptime monitor at it; successful checks aren't logged, so a
+per-minute ping doesn't bury everything else.
+
 ## Deploying
 
 The frontend is a static build (`npm run build` → `dist/`) — deploy to Netlify, Vercel, or GitHub Pages with no rewrite rules, since routing is hash-based. The API needs a Node host and a writable disk for SQLite (or the Postgres swap described above). Before deploying, set in `.env`:
@@ -526,6 +553,30 @@ The frontend is a static build (`npm run build` → `dist/`) — deploy to Netli
 - `FRONTEND_URL` — the base for reset/verification links, and where `/p/:slug` sends a human after a crawler has read its preview tags
 
 (`legacy-static/` isn't part of the Vite build and would need deploying separately.)
+
+### Automatic deploys
+
+The `deploy` job in `.github/workflows/ci.yml` runs on pushes to `main`, only
+after the tests and the browser suite have passed. Every step is gated on a
+secret or variable existing, so a repository with none set skips them rather
+than failing — it is safe to have in place before there is anywhere to deploy
+to.
+
+| Set as | Name | What it does |
+|---|---|---|
+| Variable | `VITE_API_URL` | Baked into the frontend at build time |
+| Secret | `API_DEPLOY_HOOK_URL` | POSTed to deploy the API |
+| Secret | `FRONTEND_DEPLOY_HOOK_URL` | POSTed to deploy the frontend |
+| Variable | `HEALTH_URL` | Polled afterwards until it answers 200 |
+
+Deploy hooks are plain URLs your host gives you, so this needs no
+provider-specific action or SDK. A hook that answers 4xx or 5xx fails the job:
+a green tick on a failed deploy is worse than a red one. The health poll is
+what makes "deployed" mean the new build is actually up, rather than that the
+host accepted a request — without it the job only proves a POST succeeded.
+
+Each build is kept as an artifact for 30 days, so a rollback targets an exact
+build rather than "whatever `main` looked like".
 
 ## Behind a reverse proxy
 

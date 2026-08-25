@@ -85,3 +85,86 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  # Deploys only from the default branch, only after everything above passed,
+  # and only if the corresponding secret exists. A repository with no secrets
+  # set skips every step here rather than failing — which is what makes it safe
+  # to commit before there is anywhere to deploy to.
+  deploy:
+    needs: [test, e2e]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    # Lifted into env because GitHub does not expose the `secrets` context to a
+    # step's `if:` — only github, needs, vars, env and a few others. Testing
+    # `secrets.X != ''` there silently never matches, so the deploy would look
+    # like it ran and skip every step.
+    env:
+      API_DEPLOY_HOOK_URL: ${{ secrets.API_DEPLOY_HOOK_URL }}
+      FRONTEND_DEPLOY_HOOK_URL: ${{ secrets.FRONTEND_DEPLOY_HOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Built here rather than on the host: the frontend bakes VITE_API_URL in
+      # at build time, so it has to come from somewhere that knows it.
+      - name: Build the frontend
+        run: npm run build
+        env:
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+
+      # Kept for 30 days so a bad deploy can be rolled back to an exact
+      # artifact rather than to "whatever main looked like".
+      - name: Keep the build
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-${{ github.sha }}
+          path: dist/
+          retention-days: 30
+
+      # A deploy hook is a plain URL the host gives you, so this works for
+      # Render, Deno Deploy, Cloudflare and others without an SDK or a
+      # provider-specific action.
+      - name: Deploy the API
+        if: ${{ env.API_DEPLOY_HOOK_URL != '' }}
+        run: |
+          code=$(curl -sS -X POST -o /tmp/out.txt -w '%{http_code}' "$HOOK")
+          echo "host replied $code"
+          cat /tmp/out.txt
+          # A hook that answers 4xx/5xx has not deployed anything, and a green
+          # tick on a failed deploy is worse than a red one.
+          [ "$code" -lt 400 ] || exit 1
+        env:
+          HOOK: ${{ env.API_DEPLOY_HOOK_URL }}
+
+      - name: Deploy the frontend
+        if: ${{ env.FRONTEND_DEPLOY_HOOK_URL != '' }}
+        run: |
+          code=$(curl -sS -X POST -o /tmp/out.txt -w '%{http_code}' "$HOOK")
+          echo "host replied $code"
+          cat /tmp/out.txt
+          [ "$code" -lt 400 ] || exit 1
+        env:
+          HOOK: ${{ env.FRONTEND_DEPLOY_HOOK_URL }}
+
+      # Proves the thing that is now running is the thing that just passed.
+      # Without it, "deployed" only means the host accepted a request.
+      - name: Wait for the API to come back healthy
+        if: ${{ vars.HEALTH_URL != '' }}
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -sS -o /tmp/health.json -w '%{http_code}' "$HEALTH" || echo 000)
+            if [ "$code" = "200" ]; then
+              echo "healthy after ${i} attempt(s):"; cat /tmp/health.json; exit 0
+            fi
+            echo "attempt ${i}: $code"; sleep 10
+          done
+          echo "::error::API did not report healthy within five minutes"
+          exit 1
+        env:
+          HEALTH: ${{ vars.HEALTH_URL }}
