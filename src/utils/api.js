@@ -21,6 +21,31 @@ export function setUnauthorizedHandler(fn) {
   onUnauthorized = fn;
 }
 
+// Images go up as bytes, not as JSON. Base64 inside a JSON body costs a third
+// more on the wire and forced the whole document through the parser; this
+// posts the blob itself and gets back a short URL to store in its place.
+async function requestBinary(path, blob, token) {
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": blob.type || "application/octet-stream",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: blob,
+    });
+  } catch {
+    throw new ApiError("Can't reach the server. Is it running?", 0);
+  }
+  const json = await res.json().catch(() => null);
+  if (!res.ok) {
+    if (res.status === 401 && token) onUnauthorized?.();
+    throw new ApiError(json?.error || "Upload failed.", res.status);
+  }
+  return json;
+}
+
 async function request(path, { method = "GET", body, token } = {}) {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -69,6 +94,9 @@ export const api = {
   getMine: (token) => request("/portfolios/mine", { token }),
   saveMine: (token, body) => request("/portfolios/mine", { method: "PUT", body, token }),
   deleteMine: (token) => request("/portfolios/mine", { method: "DELETE", token }),
+
+  uploadImage: (token, blob) => requestBinary("/images", blob, token),
+  imageUsage: (token) => request("/images", { token }),
 
   getBySlug: (slug) => request(`/portfolios/by-slug/${encodeURIComponent(slug)}`),
   unlockBySlug: (slug, password) =>

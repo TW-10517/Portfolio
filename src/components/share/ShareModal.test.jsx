@@ -11,6 +11,8 @@ vi.mock("../../utils/api.js", () => ({
   ApiError: class ApiError extends Error {},
   // useAuthStore registers its expired-session handler through this on import.
   setUnauthorizedHandler: vi.fn(),
+  // shareUrl.js builds the link from this.
+  API_BASE: "http://localhost:4000/api",
 }));
 
 vi.mock("qrcode", () => ({ default: { toDataURL: vi.fn().mockResolvedValue("data:image/png;base64,qr") } }));
@@ -40,7 +42,9 @@ describe("ShareModal", () => {
 
     render(<ShareModal open onClose={() => {}} />);
 
-    expect(await screen.findByDisplayValue(/#\/p\/ada-lovelace$/)).toBeTruthy();
+    // The link points at the API server's /p/:slug, not the app's own hash
+    // route — that is the only URL that can carry per-portfolio preview tags.
+    expect(await screen.findByDisplayValue("http://localhost:4000/p/ada-lovelace")).toBeTruthy();
     await waitFor(() => expect(screen.getByRole("button", { name: "Republish" })).toBeTruthy());
     expect(screen.getByRole("button", { name: "Unpublish" })).toBeTruthy();
   });

@@ -25,12 +25,10 @@ export function readJsonFile(file) {
   });
 }
 
-// Uploaded images are stored as base64 data URLs inside the portfolio JSON —
-// there's no object storage, by design. Base64 inflates bytes by about a
-// third, and the API caps a whole portfolio at 15MB, so a handful of
-// straight-from-the-camera photos used to blow the budget and fail the save
-// with a confusing error. Downscaling on the way in keeps portfolios small
-// enough to save, sync, and share.
+// Uploads are downscaled before they leave the browser. They are stored on the
+// server (see server/routes/images.js) and referenced by URL, but an upload
+// still passes through a data URL on its way there — and stays one if the
+// server can't be reached — so keeping them small still matters.
 export const MAX_IMAGE_DIMENSION = 1600;
 
 // Re-encoding is also worth it for an image that already fits but is simply
@@ -111,4 +109,46 @@ export async function readImageFile(file, { maxDimension = MAX_IMAGE_DIMENSION }
     // A failed downscale should never block the upload — store the original.
     return dataUrl;
   }
+}
+
+// Walks a portfolio and replaces every stored-image URL with the image itself.
+//
+// An exported file is meant to be a portfolio you can keep, mail to someone,
+// or import on another machine. Once images live on the server, a plain export
+// would be full of links that only resolve while that server is up and only
+// for as long as the image is there — so the export puts the bytes back. An
+// image that can't be fetched keeps its URL rather than failing the export.
+export async function inlineStoredImages(data, resolve, fetchImpl = fetch) {
+  const cache = new Map();
+
+  const inline = async (url) => {
+    if (!cache.has(url)) cache.set(url, fetchOne(url));
+    return cache.get(url);
+  };
+
+  const fetchOne = async (url) => {
+    try {
+      const res = await fetchImpl(resolve(url));
+      if (!res.ok) return url;
+      const blob = await res.blob();
+      return await fileToDataUrl(blob);
+    } catch {
+      return url;
+    }
+  };
+
+  const walk = async (node) => {
+    if (typeof node === "string") return isStored(node) ? inline(node) : node;
+    if (Array.isArray(node)) return Promise.all(node.map(walk));
+    if (node && typeof node === "object") {
+      return Object.fromEntries(await Promise.all(Object.entries(node).map(async ([k, v]) => [k, await walk(v)])));
+    }
+    return node;
+  };
+
+  return walk(data);
+}
+
+function isStored(value) {
+  return value.startsWith("/api/images/");
 }

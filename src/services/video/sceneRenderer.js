@@ -4,10 +4,16 @@
 // cleanly, and silently skipped otherwise rather than breaking the scene.
 
 import { tokenizeForWrap, joinTokens } from "../../utils/textMetrics.js";
+import { resolveImageUrl } from "../../utils/imageUrl.js";
 
 const imageCache = new Map();
 
-function loadImage(src) {
+function loadImage(rawSrc) {
+  // Uploaded images are stored as a path relative to the API, which is a
+  // different origin from the app in development. crossOrigin below is what
+  // keeps the canvas untainted — without it, drawing one of these would make
+  // captureStream() and every export fail rather than just look wrong.
+  const src = resolveImageUrl(rawSrc);
   if (!src) return Promise.resolve(null);
   if (imageCache.has(src)) return imageCache.get(src);
   const promise = new Promise((resolve) => {

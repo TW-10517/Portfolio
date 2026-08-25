@@ -42,6 +42,36 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_rate_limits_reset_at ON rate_limits(reset_at);
+
+  -- Uploaded images, out of the portfolio JSON.
+  --
+  -- Inline base64 made every save re-upload every photo, and a portfolio with
+  -- enough of them simply could not be saved — it exceeded the API's body
+  -- limit and there was nothing the user could do about it. Blobs live here
+  -- and the document keeps a short URL.
+  --
+  -- The key is the SHA-256 of the bytes, so re-uploading the same file (or two
+  -- people using the same image) costs nothing and the URL can be cached
+  -- forever: the content at a given hash can never change.
+  CREATE TABLE IF NOT EXISTS image_blobs (
+    hash TEXT PRIMARY KEY,
+    mime TEXT NOT NULL,
+    bytes BLOB NOT NULL,
+    size INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Who uploaded what. Separate from the blob because the same bytes can be
+  -- shared: this is what lets a user's images be removed with their account
+  -- and what a per-user quota is counted from.
+  CREATE TABLE IF NOT EXISTS image_owners (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    hash TEXT NOT NULL REFERENCES image_blobs(hash) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, hash)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_image_owners_hash ON image_owners(hash);
 `);
 
 // Idempotent column migrations — SQLite has no "ADD COLUMN IF NOT EXISTS",

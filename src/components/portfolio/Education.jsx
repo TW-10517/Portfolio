@@ -2,6 +2,7 @@ import { usePortfolioTheme } from "./ThemeContext.jsx";
 import { Reveal } from "./Reveal.jsx";
 import { SectionTag } from "./SectionTag.jsx";
 import { sanitizeUrl } from "../../utils/sanitizeUrl.js";
+import { resolveImageUrl } from "../../utils/imageUrl.js";
 
 export function Education() {
   const { data, palette, primary, animationLevel } = usePortfolioTheme();
@@ -45,7 +46,7 @@ export function Education() {
                   style={{ borderColor: palette.border, background: palette.surface }}
                 >
                   {c.badge ? (
-                    <img src={c.badge} alt={c.name} className="w-14 h-14 rounded-full mx-auto mb-3 object-cover" />
+                    <img src={resolveImageUrl(c.badge)} alt={c.name} className="w-14 h-14 rounded-full mx-auto mb-3 object-cover" />
                   ) : (
                     <div className="w-14 h-14 rounded-full mx-auto mb-3 flex items-center justify-center text-xl" style={{ background: palette.surface2 }}>🏅</div>
                   )}

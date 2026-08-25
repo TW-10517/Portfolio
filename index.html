@@ -6,11 +6,10 @@
     <title>Portfolio Builder</title>
     <meta name="description" content="Build, preview, and share your personal portfolio — no code required." />
 
-    <!-- Link-preview metadata for the app itself. Note that a *shared
-         portfolio* at #/p/:slug cannot get its own preview from here: the
-         fragment is never sent to the server, and Slack/LinkedIn/WhatsApp
-         crawlers don't run JavaScript, so they only ever see these tags.
-         Per-portfolio previews need server-rendered HTML per slug. -->
+    <!-- Link-preview metadata for the app itself. A *shared portfolio* gets
+         its own tags from the API server's /p/:slug route (server/preview.js)
+         rather than from here — the crawlers don't run JavaScript, and a
+         static host can't vary these per slug. -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Portfolio Builder" />
     <meta property="og:title" content="Portfolio Builder" />

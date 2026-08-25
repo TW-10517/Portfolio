@@ -21,8 +21,8 @@ npm run dev         # frontend only
 npm run dev:server  # backend only (http://localhost:4000)
 npm run build       # production build to dist/
 npm run preview     # serve the production build locally
-npm test            # vitest run — 233 tests across 22 files
-npm run test:e2e    # playwright — 32 browser specs on isolated ports
+npm test            # vitest run — 286 tests across 28 files
+npm run test:e2e    # playwright — 33 browser specs on isolated ports
 npm run test:all    # both
 ```
 
@@ -59,7 +59,8 @@ Validation rules are enforced twice — client-side in `LoginPage.jsx`/`Register
 |---|---|
 | `#/editor` | Editor (left: tabbed form) + Live Preview (right, with Desktop/Tablet/Mobile toggle). Auth required. |
 | `#/preview` | Full-screen "Preview as Visitor" view of your **current draft** (opens in a new tab from the editor) |
-| `#/p/:slug` | The **published** portfolio at your share link |
+| `#/p/:slug` | The **published** portfolio (the app's own route) |
+| `/p/:slug` | The **share link** — served by the API with that portfolio's link-preview tags, then redirects here |
 | `#/login`, `#/register` | Account entry |
 | `#/forgot-password`, `#/reset-password/:token` | Password reset |
 | `#/verify-email/:token` | Email verification |
@@ -132,7 +133,7 @@ Custom CSS from the Theme tab is passed through `utils/sanitizeCss.js` before be
 npm test
 ```
 
-233 tests across 22 files (Vitest, plus Supertest for the API and Testing Library for components):
+286 tests across 28 files (Vitest, plus Supertest for the API and Testing Library for components):
 
 - **API integration** — `server/routes/auth.integration.test.js`, `portfolio.integration.test.js` (real HTTP against the Express app, real SQLite)
 - **Auth units** — `server/auth.test.js` (hashing, JWT, validation rules)
@@ -141,6 +142,9 @@ npm test
 - **Components** — `ShareModal.test.jsx` (publish state and view count), `RequireAuth.test.jsx` (the editor guard), `ImageUpload.test.jsx` (upload limits and failure handling), `Modal.test.jsx` (focus trap, Escape, focus restore)
 - **Store** — `usePortfolioStore.test.js`, `useAuthStore.test.js` (expired-session handling)
 - **Security** — `sanitizeUrl.test.js` (link scheme allowlist), `server/validatePortfolio.test.js` (save-time structural checks), `server/SqliteRateLimitStore.test.js` (persistent rate limiting)
+- **Sharing** — `server/preview.test.js` and `server/routes/preview.integration.test.js` (per-portfolio link previews, and that a private one leaks nothing)
+- **Images** — `server/routes/images.integration.test.js` (upload, sniffing, dedup, immutable serving), `imageUrl.test.js`, `inlineStoredImages.test.js`
+- **Languages** — `voices.test.js` (every phrase, every style, every language)
 - **Utils** — `slug.test.js`, `sanitizeCss.test.js`, `textMetrics.test.js`, `exportImport.test.js`
 
 Component suites opt into a DOM per file with a `// @vitest-environment jsdom`
@@ -153,14 +157,14 @@ skips jsdom's startup cost.
 npm run test:e2e
 ```
 
-32 Playwright specs in `e2e/`, because almost every serious bug this project
+33 Playwright specs in `e2e/`, because almost every serious bug this project
 has had was invisible to unit tests: narration cut off mid-sentence, an export
 that claimed to have audio and didn't, a share modal that hid your own link
 when you reopened it, focus escaping a dialog, a scene duration field that
 turned "30" into "3025".
 
 - `auth.spec.js` (9) — register, login, logout, guard redirects, session expiry
-- `share.spec.js` (7) — publish, republish, unpublish, the public share page
+- `share.spec.js` (8) — publish, republish, unpublish, the public share page, link-preview tags
 - `sync.spec.js` (4) — edits surviving a reload and reaching a second browser context
 - `a11y.spec.js` (4) — axe-core over login, both editor modes, the portfolio
 - `editor.spec.js` (4) — tab navigation, adding and removing entries, autosave
@@ -225,6 +229,63 @@ src/
 legacy-static/          Earlier standalone static-HTML portfolio (reference only, not built by Vite)
 ```
 
+## Share links and previews
+
+A share link is `https://<api-host>/p/<slug>`, not the app's own `#/p/<slug>`.
+
+That looks like a detour and is the whole point. Slack, LinkedIn, WhatsApp and
+iMessage unfurl a link by fetching it and reading `<head>` — they don't run
+JavaScript, and a URL fragment is never sent to a server at all, so every
+shared portfolio used to preview as an identical "Portfolio Builder" card.
+`server/preview.js` answers `/p/:slug` with that portfolio's own title,
+description and image, then bounces a human straight on to the app. The
+portfolio itself is still rendered entirely in the browser — nothing about the
+app became server-rendered.
+
+A private or password-protected portfolio previews exactly like a slug that
+doesn't exist: same status, same bytes. Anything else would let anyone holding
+the link confirm whose it is without entering the password. Crawler hits don't
+touch the view counter.
+
+## Image storage
+
+Uploads go to the API (`server/routes/images.js`) and the portfolio keeps a
+short URL. They used to be base64'd into the portfolio JSON itself, which meant
+every save re-uploaded every photo and enough images made the document
+impossible to save at all.
+
+- **Content-addressed.** The URL is the SHA-256 of the bytes, so re-uploading
+  the same file costs nothing and the response can be cached forever —
+  the content at a given hash can't change.
+- **Stored relative** (`/api/images/<hash>.webp`) and resolved against the API's
+  origin at render time (`src/utils/imageUrl.js`). An absolute URL would bake
+  the development host into a portfolio that later gets served from production.
+- **Sniffed, not trusted.** The bytes have to actually start with a PNG, JPEG,
+  WebP or GIF header. SVG is refused outright: it's a document that can carry
+  script, and serving it from our own origin would make every upload a stored
+  XSS vector.
+- **Still downscaled first** — 1600px, WebP — so what gets stored is around
+  500KB rather than several megabytes.
+- **Exports stay self-contained.** `inlineStoredImages()` puts the bytes back
+  into the JSON on the way out, so a downloaded portfolio is still a file you
+  can keep or import anywhere.
+- If the upload can't happen (offline, server down, storage full) the inline
+  copy is kept instead, so the editor never loses a picture you just chose.
+
+## Narration languages
+
+The offline writer speaks all three languages the app offers — English,
+Japanese and Tamil — with no model, no account and no network call. The
+phrasing banks are in `src/services/ai/voices.js`: one per language, each with
+all four styles, plus the bits that differ structurally rather than lexically
+(Japanese joins lists with `、` and runs clauses together without spaces;
+a degree reads "MIT のBSc" there and "BSc from MIT" in English).
+
+Your own content is never translated. Names, companies, job titles and quotes
+are reproduced exactly as you wrote them — the writer supplies the sentence
+around them and nothing else, which is the same rule that stops it inventing
+facts.
+
 ## Deploying
 
 The frontend is a static build (`npm run build` → `dist/`) — deploy to Netlify, Vercel, or GitHub Pages with no rewrite rules, since routing is hash-based. The API needs a Node host and a writable disk for SQLite (or the Postgres swap described above). Before deploying, set in `.env`:
@@ -232,7 +293,7 @@ The frontend is a static build (`npm run build` → `dist/`) — deploy to Netli
 - `JWT_SECRET` — a long random string (**required**; there's an insecure dev fallback otherwise)
 - `CORS_ORIGIN` — your real frontend origin(s); the API rejects anything not listed
 - `VITE_API_URL` — where the browser should reach the API, if it isn't `localhost:4000`
-- `FRONTEND_URL` — the base for reset/verification links
+- `FRONTEND_URL` — the base for reset/verification links, and where `/p/:slug` sends a human after a crawler has read its preview tags
 
 (`legacy-static/` isn't part of the Vite build and would need deploying separately.)
 
@@ -290,8 +351,6 @@ in the editor's preview pane the portfolio renders its sections as a labelled
 
 - **No email delivery.** Reset and verification links go to the API server's console. Wire a provider into `deliverLink()` in `server/routes/auth.js`.
 - **SQLite only.** `server/db.js` doesn't speak Postgres — see "Moving to a hosted database" above. It's a single file on one disk: `npm run db:backup` takes a consistent snapshot via SQLite's online backup API (safe on a live WAL database, unlike `cp`), keeping the newest 10 in `server/backups/`.
-- **No per-portfolio link previews.** `index.html` carries Open Graph and Twitter card tags for the app itself, but a shared portfolio can't get its own: the `#/p/:slug` fragment is never sent to the server, and the Slack/LinkedIn/WhatsApp crawlers don't run JavaScript, so every share link previews identically. Fixing this properly needs server-rendered HTML per slug (the SSR path from the original spec).
-- **Uploaded images live inside the portfolio JSON.** There's no object storage, by design. Uploads are downscaled to 1600px and re-encoded as WebP on the way in (`src/utils/exportImport.js`), which keeps a normal portfolio far under the API's 15MB cap, but a portfolio with dozens of images will still eventually hit it.
-- **Non-English narration needs a real model, and its quality is the model's.** The offline template writer is English-only; any LLM (local or cloud) can write the other languages, and the tab says so when the active writer can't. Capability varies sharply by model — `qwen2.5:3b` handles Japanese well and Tamil poorly — so a scene the model can't write in the chosen language is rejected and falls back to English rather than shipping nonsense.
-- **On-screen text stays in the portfolio's own language.** Only the narration and captions are translated; names, roles, and skill chips are rendered from your portfolio fields verbatim.
-- **Video export depends on browser support.** `MediaRecorder` MP4 muxing and `getDisplayMedia` audio capture vary by browser; the export degrades to WebM and/or silent video rather than failing.
+- **Non-English quality from a *local model* is the model's.** The built-in offline writer handles all three languages itself (see "Narration languages"), but if you point the app at Ollama instead, capability varies sharply by model — `qwen2.5:3b` handles Japanese well and Tamil poorly — so a scene the model can't write in the chosen language is rejected and falls back to English rather than shipping nonsense.
+- **On-screen text stays in the portfolio's own language.** Only the narration and captions are written in the chosen language; names, roles, companies, quotes and skill chips are rendered from your portfolio fields verbatim. That is deliberate — translating someone's job title or their client's testimonial would be inventing content.
+- **Video export depends on browser support, and can't be fixed from here.** `MediaRecorder` MP4 muxing and `getDisplayMedia` audio capture vary by browser. The export picks the best container the browser supports and degrades to WebM rather than failing, and it reports afterwards whether narration was actually captured instead of claiming it was. The audio detour exists because `speechSynthesis` output cannot be captured programmatically by any browser API — there is no way to route it into a `MediaStream`, so a tab-audio share is the only route. Shipping a WASM TTS engine purely to work around that would cost more than it's worth.

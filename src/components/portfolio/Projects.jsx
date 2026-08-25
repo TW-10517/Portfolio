@@ -4,6 +4,7 @@ import { Reveal } from "./Reveal.jsx";
 import { SectionTag } from "./SectionTag.jsx";
 import { Modal } from "../ui/Modal.jsx";
 import { sanitizeUrl } from "../../utils/sanitizeUrl.js";
+import { resolveImageUrl } from "../../utils/imageUrl.js";
 
 function ProjectCard({ project, palette, primary, onOpen }) {
   const [tilt, setTilt] = useState({ x: 0, y: 0 });
@@ -21,7 +22,7 @@ function ProjectCard({ project, palette, primary, onOpen }) {
       onClick={() => onOpen(project)}
     >
       <div className="aspect-[4/3] overflow-hidden">
-        <img src={project.images?.[0]} alt={project.name} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
+        <img src={resolveImageUrl(project.images?.[0])} alt={project.name} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
       </div>
       <div className="p-5">
         <h3 className="font-head font-semibold mb-1.5" style={{ color: palette.text }}>{project.name}</h3>
@@ -86,7 +87,7 @@ export function Projects() {
       <Modal open={!!selected} onClose={() => setSelected(null)} wide label={selected ? `Project: ${selected.name}` : "Project details"}>
         {selected && (
           <div>
-            {selected.images?.[0] && <img src={selected.images[0]} alt={selected.name} className="w-full rounded-xl mb-5 max-h-72 object-cover" />}
+            {selected.images?.[0] && <img src={resolveImageUrl(selected.images[0])} alt={selected.name} className="w-full rounded-xl mb-5 max-h-72 object-cover" />}
             <h2 className="text-2xl font-head font-bold mb-2 text-white">{selected.name}</h2>
             <p className="text-slate-400 mb-4">{selected.fullDesc || selected.shortDesc}</p>
             {selected.tech?.length > 0 && (

@@ -1,10 +1,12 @@
 import { AIProvider } from "./AIProvider.js";
 import { countSpokenWords, splitSentences } from "../../utils/textMetrics.js";
+import { bankFor } from "./voices.js";
 
 // Zero-cost, zero-setup script writer. Runs entirely in the browser with no
-// network call and no API key, so the AI Video feature always works even if
-// no cloud provider is configured. Only English phrasing is supported —
-// other languages fall back to this text with a warning shown in the UI.
+// network call and no API key, so the AI Video feature always works even if no
+// cloud provider is configured. It writes in every language the app offers —
+// the phrasing banks live in voices.js — while the portfolio's own content
+// (names, companies, titles, quotes) is always reproduced exactly as written.
 export class LocalProvider extends AIProvider {
   get name() {
     return "Basic (offline)";
@@ -12,7 +14,7 @@ export class LocalProvider extends AIProvider {
 
   async writeScript(brief, sceneType, options = {}) {
     const writer = WRITERS[sceneType] || WRITERS.default;
-    let text = writer(brief, options);
+    const text = writer(brief, options);
     return capWords(text, options.maxWords);
   }
 }
@@ -52,166 +54,91 @@ export function capWords(text, maxWords) {
 function firstSentences(text, count = 2) {
   return splitSentences(text).slice(0, count).join(" ");
 }
-
-function joinList(items, max = 4) {
-  const list = items.filter(Boolean).slice(0, max);
-  if (list.length <= 1) return list[0] || "";
-  if (list.length === 2) return `${list[0]} and ${list[1]}`;
-  return `${list.slice(0, -1).join(", ")}, and ${list[list.length - 1]}`;
+function voiceFor({ style, language } = {}) {
+  return bankFor(language, style);
 }
 
-// Each style gets its own phrasing for the connective tissue of the script.
-// This used to be a single OPENERS map that only swapped the intro's first
-// two words (and a `tone` option that only decided whether the intro ended
-// in "!"), which meant both controls were essentially decorative — every
-// other line read identically no matter what you picked. These phrase banks
-// make the chosen style audible in every scene, which is what the control
-// claims to do. Facts still come only from the portfolio; style changes the
-// wording around them, never the content.
-const VOICE = {
-  professional: {
-    intro: (name, roles) => `Hi, I'm ${name}${roles ? `, ${roles}` : ""}.`,
-    philosophyLead: " My approach:",
-    skills: (list) => `My core toolkit includes ${list}.`,
-    learning: (list) => ` I'm currently deepening my skills in ${list}.`,
-    role: (company, role, duration) => `At ${company}, I served as ${role}${duration}.`,
-    project: (name, desc) => `One project I'm proud of is ${name} — ${desc}`,
-    tech: (list) => ` Built with ${list}.`,
-    degrees: (list) => `I hold ${list}.`,
-    certs: (list) => `I'm also certified in ${list}.`,
-    awards: (list) => `Along the way, I've earned ${list}.`,
-    quote: (quote, who) => `"${quote}" — ${who}.`,
-    signOff: "Thanks for watching.",
-  },
-  creative: {
-    intro: (name, roles) => `Hey there — I'm ${name}${roles ? `, ${roles}` : ""}!`,
-    philosophyLead: " The way I see it —",
-    skills: (list) => `I build with ${list}.`,
-    learning: (list) => ` Right now I'm going deeper on ${list}.`,
-    role: (company, role, duration) => `${role} at ${company}${duration}.`,
-    project: (name, desc) => `Take ${name} — ${desc}`,
-    tech: (list) => ` Built with ${list}.`,
-    degrees: (list) => `Studied ${list}.`,
-    certs: (list) => `Plus certifications in ${list}.`,
-    awards: (list) => `Picked up ${list} along the way.`,
-    quote: (quote, who) => `"${quote}" — ${who}.`,
-    signOff: "Thanks for watching!",
-  },
-  minimal: {
-    intro: (name, roles) => `${name}.${roles ? ` ${roles}.` : ""}`,
-    philosophyLead: "",
-    skills: (list) => `${list}.`,
-    learning: (list) => ` Currently learning ${list}.`,
-    role: (company, role, duration) => `${role}, ${company}${duration}.`,
-    project: (name, desc) => `${name} — ${desc}`,
-    tech: (list) => ` ${list}.`,
-    degrees: (list) => `${list}.`,
-    certs: (list) => `Certified in ${list}.`,
-    awards: (list) => `${list}.`,
-    quote: (quote, who) => `"${quote}" — ${who}.`,
-    signOff: "Thanks for watching.",
-  },
-  storytelling: {
-    intro: (name, roles) => `My name is ${name}${roles ? `, and I work as ${roles}` : ""}.`,
-    philosophyLead: " What I've come to believe:",
-    skills: (list) => `Over time, my toolkit grew to include ${list}.`,
-    learning: (list) => ` These days I'm learning ${list}.`,
-    role: (company, role, duration) => `My time at ${company} as ${role}${duration} shaped how I work.`,
-    project: (name, desc) => `Then came ${name} — ${desc}`,
-    tech: (list) => ` It was built with ${list}.`,
-    degrees: (list) => `It started with ${list}.`,
-    certs: (list) => `Later I added certifications in ${list}.`,
-    awards: (list) => `Along the way came ${list}.`,
-    quote: (quote, who) => `As ${who} put it: "${quote}"`,
-    signOff: "Thanks for watching.",
-  },
-};
-
-function voiceFor(style) {
-  return VOICE[style] || VOICE.professional;
+// Joins the pieces of a scene with whatever separates sentences in this
+// language, dropping any that came out empty.
+function sentences(v, ...parts) {
+  // Trimmed before joining: the English phrases carry a leading space each
+  // (they used to be concatenated directly), and joining those with another
+  // separator leaves double spaces that a TTS voice pauses on.
+  return parts
+    .map((p) => (p || "").trim())
+    .filter(Boolean)
+    .join(v.separator)
+    .trim();
 }
 
 const WRITERS = {
-  intro(brief, { style } = {}) {
-    const v = voiceFor(style);
-    const tagline = brief.tagline ? ` ${brief.tagline}` : "";
-    return `${v.intro(brief.name, brief.roles)}${tagline}`.trim();
+  intro(brief, options = {}) {
+    const v = voiceFor(options);
+    return sentences(v, v.intro(brief.name, brief.roles), brief.tagline);
   },
 
-  about(brief, { style } = {}) {
-    const v = voiceFor(style);
+  about(brief, options = {}) {
+    const v = voiceFor(options);
     const summary = firstSentences(brief.bio, 2);
-    const philosophy = brief.philosophy ? `${v.philosophyLead} ${brief.philosophy}`.trim() : "";
-    return `${summary}${philosophy ? ` ${philosophy}` : ""}`.trim();
+    const philosophy = brief.philosophy ? `${v.philosophyLead}${v.philosophyLead ? v.separator : ""}${brief.philosophy}` : "";
+    return sentences(v, summary, philosophy);
   },
 
-  skills(brief, { style } = {}) {
-    const v = voiceFor(style);
-    const names = joinList(brief.topSkills, 6);
+  skills(brief, options = {}) {
+    const v = voiceFor(options);
+    const names = v.join(brief.topSkills, 6);
     if (!names) return "";
-    const learning = brief.learning?.length ? v.learning(joinList(brief.learning, 3)) : "";
-    return `${v.skills(names)}${learning}`;
+    const learning = brief.learning?.length ? v.learning(v.join(brief.learning, 3)) : "";
+    return sentences(v, v.skills(names), learning);
   },
 
-  experience(brief, { style } = {}) {
-    const v = voiceFor(style);
-    const lines = brief.items.map((item) => {
-      const highlight = firstSentences(item.description, 1);
-      const duration = item.duration ? ` (${item.duration})` : "";
-      return `${v.role(item.company, item.role, duration)}${highlight ? " " + highlight : ""}`;
-    });
-    return lines.join(" ");
+  experience(brief, options = {}) {
+    const v = voiceFor(options);
+    const lines = brief.items.map((item) =>
+      sentences(v, v.role(item.company, item.role, v.duration(item.duration)), firstSentences(item.description, 1))
+    );
+    return lines.filter(Boolean).join(v.separator || " ");
   },
 
-  project(brief, { style } = {}) {
-    const v = voiceFor(style);
+  project(brief, options = {}) {
+    const v = voiceFor(options);
     const desc = brief.shortDesc || firstSentences(brief.fullDesc, 1);
-    const tech = brief.tech?.length ? v.tech(joinList(brief.tech, 4)) : "";
-    const metrics = brief.metrics ? ` ${brief.metrics}.` : "";
-    return `${v.project(brief.name, desc)}${tech}${metrics}`;
+    const tech = brief.tech?.length ? v.tech(v.join(brief.tech, 4)) : "";
+    const metrics = brief.metrics ? v.metrics(brief.metrics) : "";
+    return sentences(v, v.project(brief.name, desc), tech, metrics);
   },
 
-  education(brief, { style } = {}) {
-    const v = voiceFor(style);
-    const degrees = (brief.degrees || []).map((d) => `${d.degree} from ${d.institution}${d.year ? ` (${d.year})` : ""}`);
-    const certs = (brief.certifications || []).map((c) => `${c.name}${c.issuer ? ` from ${c.issuer}` : ""}`);
-    const parts = [];
-    if (degrees.length) parts.push(v.degrees(degrees.join(", ")));
-    if (certs.length) parts.push(v.certs(joinList(certs, 3)));
-    return parts.join(" ").trim();
+  education(brief, options = {}) {
+    const v = voiceFor(options);
+    const degrees = (brief.degrees || []).map(v.degreeItem);
+    const certs = (brief.certifications || []).map(v.certItem);
+    return sentences(
+      v,
+      degrees.length ? v.degrees(degrees.join(", ")) : "",
+      certs.length ? v.certs(v.join(certs, 3)) : ""
+    );
   },
 
-  achievements(brief, { style } = {}) {
-    const v = voiceFor(style);
-    const items = (brief.awards || []).map((a) => `${a.name}${a.issuer ? ` from ${a.issuer}` : ""}${a.year ? ` (${a.year})` : ""}`);
+  achievements(brief, options = {}) {
+    const v = voiceFor(options);
+    const items = (brief.awards || []).map(v.awardItem);
     if (!items.length) return "";
-    return v.awards(joinList(items, 3));
+    return v.awards(v.join(items, 3));
   },
 
-  testimonial(brief, { style } = {}) {
-    const v = voiceFor(style);
+  testimonial(brief, options = {}) {
+    const v = voiceFor(options);
     if (!brief.quote) return "";
-    const who = `${brief.name}${brief.role ? `, ${brief.role}` : ""}${brief.company ? ` at ${brief.company}` : ""}`;
-    return v.quote(brief.quote, who);
+    return v.quote(brief.quote, v.who(brief));
   },
 
-  closing(brief, { style, audience = "general" } = {}) {
-    const v = voiceFor(style);
-    const cta = CLOSING_CTA[audience] || CLOSING_CTA.general;
-    const contact = brief.email ? ` Reach me at ${brief.email}.` : "";
-    return `${cta}${contact} ${v.signOff}`;
+  closing(brief, options = {}) {
+    const v = voiceFor(options);
+    const contact = brief.email ? v.contact(brief.email) : "";
+    return sentences(v, v.cta(options.audience || "general"), contact, v.signOff);
   },
 
   default(brief) {
     return brief.text || "";
   },
-};
-const CLOSING_CTA = {
-  general: "I'm always open to interesting conversations and new opportunities.",
-  recruiter: "I'm actively open to new roles — let's talk about how I can contribute to your team.",
-  "job-application": "I'd love the opportunity to bring these skills to your team.",
-  client: "If you have a project in mind, I'd love to help you bring it to life.",
-  freelancer: "I'm currently taking on new freelance projects — let's build something great together.",
-  "personal-branding": "Thanks for getting to know me a little better.",
-  linkedin: "Let's connect — I'm always happy to grow my network with people building interesting things.",
 };

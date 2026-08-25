@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { usePortfolioStore } from "../store/usePortfolioStore.js";
 import { useAuthStore } from "../store/useAuthStore.js";
-import { downloadJson, readJsonFile } from "../utils/exportImport.js";
+import { downloadJson, readJsonFile, inlineStoredImages } from "../utils/exportImport.js";
+import { resolveImageUrl } from "../utils/imageUrl.js";
 import { api } from "../utils/api.js";
 import { Button } from "../components/ui/Button.jsx";
 import { ShareModal } from "../components/share/ShareModal.jsx";
@@ -61,6 +62,14 @@ export function EditorPage() {
   const token = useAuthStore((s) => s.token);
   const logout = useAuthStore((s) => s.logout);
   const navigate = useNavigate();
+
+  // Images live on the server now, so a straight dump of `data` would export a
+  // file full of links instead of pictures. Put the bytes back first, so the
+  // download is still something you can keep or import anywhere.
+  const exportPortfolio = async () => {
+    const portable = await inlineStoredImages(data, resolveImageUrl);
+    downloadJson(portable, `${data.profile.name || "portfolio"}.json`);
+  };
 
   // Pulls in whatever this account last published/saved server-side, so
   // editing continues across devices instead of being stuck in one
@@ -166,7 +175,7 @@ export function EditorPage() {
             Import
             <input type="file" accept="application/json" onChange={handleImport} className="hidden" />
           </label>
-          <button onClick={() => downloadJson(data, `${data.profile.name || "portfolio"}.json`)} className="text-xs text-slate-400 hover:text-white">
+          <button onClick={exportPortfolio} className="text-xs text-slate-400 hover:text-white">
             Export
           </button>
           <button onClick={handleReset} className="text-xs text-slate-400 hover:text-red-400">

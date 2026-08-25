@@ -222,9 +222,9 @@ export function TabAIVideo() {
   }, []);
 
   const providerName = getAIProvider("auto").name;
-  // The offline template writer only knows English phrasing; a real model
-  // (local or cloud) can write the other languages.
-  const languageWarning = config.language !== "English" && providerName === "Basic (offline)";
+  // The offline writer speaks every language the menu offers now, so this is a
+  // note about what it does NOT translate rather than a warning that it can't.
+  const languageNote = config.language !== "English" && providerName === "Basic (offline)";
   const matchingVoices = voicesForLanguage(voices, config.language);
   const missingVoice = config.language !== "English" && voices.length > 0 && matchingVoices.length === 0;
 
@@ -688,9 +688,10 @@ export function TabAIVideo() {
                   </Select>
                 </div>
               </div>
-              {languageWarning && (
-                <p className="text-[11px] text-amber-400 mt-2">
-                  The built-in offline writer only speaks English. Run a local model (see advanced below) to write scripts in {config.language}.
+              {languageNote && (
+                <p className="text-[11px] text-slate-400 mt-2">
+                  Your own words — names, companies, titles and quotes — are read out exactly as you wrote them. Only the
+                  narration around them is written in {config.language}.
                 </p>
               )}
               {config.language !== "English" && providerName.startsWith("Ollama") && (

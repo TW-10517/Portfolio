@@ -2,6 +2,7 @@ import { usePortfolioTheme } from "./ThemeContext.jsx";
 import { ParticleCanvas } from "./ParticleCanvas.jsx";
 import { useTyping } from "../../hooks/useTyping.js";
 import { sanitizeUrl, sanitizeDownloadUrl } from "../../utils/sanitizeUrl.js";
+import { resolveImageUrl } from "../../utils/imageUrl.js";
 
 export function Hero() {
   const { data, palette, primary, secondary, animationLevel } = usePortfolioTheme();
@@ -34,7 +35,7 @@ export function Hero() {
           <div className="order-2 md:order-1 flex justify-center">
             <div className="relative w-64 h-64 md:w-80 md:h-80 rounded-3xl overflow-hidden" style={{ boxShadow: `0 0 60px ${primary}33` }}>
               {profile.photo ? (
-                <img src={profile.photo} alt={profile.name} className="w-full h-full object-cover" />
+                <img src={resolveImageUrl(profile.photo)} alt={profile.name} className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-5xl font-bold font-head" style={{ background: palette.surface2, color: palette.textDim }}>
                   {(profile.name || "?")[0]}

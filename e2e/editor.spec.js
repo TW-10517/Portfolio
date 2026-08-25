@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { register } from "./helpers.js";
+import { API_ORIGIN } from "./config.js";
 
 const TABS = [
   "Profile", "About Me", "Skills", "Experience", "Projects",
@@ -34,11 +35,12 @@ test.describe("editor", () => {
     await expect(page.locator('aside[aria-label="Preview notice"]')).toBeVisible();
   });
 
-  test("an oversized image is downscaled rather than rejected", async ({ page }) => {
-    // Portfolios are stored as JSON with images inline, so a straight-from-the
-    // -camera photo used to push the document past the API's size cap. Driven
-    // through the real upload control rather than by importing the module:
-    // the suite runs against a production bundle, where /src paths don't exist.
+  test("an oversized image is stored on the server, not inside the portfolio", async ({ page, request }) => {
+    // A straight-from-the-camera photo used to be base64'd into the portfolio
+    // JSON, where enough of them pushed the document past the API's body cap
+    // with no way out. Driven through the real upload control rather than by
+    // importing the module: the suite runs against a production bundle, where
+    // /src paths don't exist.
     await register(page);
     await page.click("text=Profile");
 
@@ -69,11 +71,11 @@ test.describe("editor", () => {
 
     const photo = await page.evaluate(async () => {
       // The default portfolio ships a placeholder photo URL, so "truthy" isn't
-      // the signal — wait for it to become an inline data URL.
+      // the signal — wait for it to be replaced by the upload.
       const read = () => {
         const v = JSON.parse(localStorage.getItem("portfolio-builder:draft") || "null")
           ?.state?.data?.profile?.photo;
-        return typeof v === "string" && v.startsWith("data:") ? v : null;
+        return typeof v === "string" && !v.startsWith("https://placehold.co") ? v : null;
       };
       for (let i = 0; i < 100 && !read(); i += 1) {
         await new Promise((r) => setTimeout(r, 100));
@@ -82,20 +84,29 @@ test.describe("editor", () => {
     });
     expect(photo, "the upload never reached the store").toBeTruthy();
 
+    // The draft holds a short URL, not megabytes of base64. This is the whole
+    // point: the portfolio JSON used to grow by the size of every photo, and
+    // enough of them made it impossible to save at all.
+    expect(photo).toMatch(/^\/api\/images\/[0-9a-f]{64}\.[a-z]+$/);
+
+    const stored = await request.get(`${API_ORIGIN}${photo}`);
+    expect(stored.status()).toBe(200);
+    expect(stored.headers()["cache-control"]).toContain("immutable");
+    const storedBytes = (await stored.body()).length;
+    expect(storedBytes).toBeLessThan(buffer.length / 3);
+
+    // And it renders — resolved back to an absolute URL against the API.
     const dims = await page.evaluate(
       (src) =>
         new Promise((res) => {
           const i = new Image();
           i.onload = () => res([i.naturalWidth, i.naturalHeight]);
+          i.onerror = () => res(null);
           i.src = src;
         }),
-      photo
+      `${API_ORIGIN}${photo}`
     );
-
     // 1600 is MAX_IMAGE_DIMENSION in src/utils/exportImport.js.
     expect(dims).toEqual([1600, 1067]);
-    // Base64 costs ~4/3, so compare decoded bytes against the uploaded file.
-    const storedBytes = (photo.length - photo.indexOf(",") - 1) * 0.75;
-    expect(storedBytes).toBeLessThan(buffer.length / 3);
   });
 });

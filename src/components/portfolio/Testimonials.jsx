@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { usePortfolioTheme } from "./ThemeContext.jsx";
 import { Reveal } from "./Reveal.jsx";
 import { SectionTag } from "./SectionTag.jsx";
+import { resolveImageUrl } from "../../utils/imageUrl.js";
 
 export function Testimonials() {
   const { data, palette, primary, secondary, animationLevel } = usePortfolioTheme();
@@ -45,7 +46,7 @@ export function Testimonials() {
               style={{ borderColor: palette.border, background: palette.surface }}
             >
               {current.photo ? (
-                <img src={current.photo} alt={current.name} className="w-16 h-16 rounded-full mx-auto mb-4 object-cover border-2" style={{ borderColor: primary }} />
+                <img src={resolveImageUrl(current.photo)} alt={current.name} className="w-16 h-16 rounded-full mx-auto mb-4 object-cover border-2" style={{ borderColor: primary }} />
               ) : (
                 <div className="w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center font-head font-semibold" style={{ background: palette.surface2, color: palette.textDim }}>
                   {current.name?.[0]}

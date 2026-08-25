@@ -7,6 +7,7 @@ import { Modal } from "../ui/Modal.jsx";
 import { Button } from "../ui/Button.jsx";
 import { Field, TextInput, Select } from "../ui/Field.jsx";
 import { slugify } from "../../utils/slug.js";
+import { shareUrlFor } from "../../utils/shareUrl.js";
 
 export function ShareModal({ open, onClose }) {
   const data = usePortfolioStore((s) => s.data);
@@ -24,7 +25,10 @@ export function ShareModal({ open, onClose }) {
   const [unpublishing, setUnpublishing] = useState(false);
   const [error, setError] = useState("");
 
-  const shareUrl = `${window.location.origin}${window.location.pathname}#/p/${slugify(slug)}`;
+  // Not the app's own #/p/:slug URL: that one previews as a generic "Portfolio
+  // Builder" card everywhere it gets pasted, because the fragment never
+  // reaches a server and crawlers don't run JavaScript. See utils/shareUrl.js.
+  const shareUrl = shareUrlFor(slug, { origin: window.location.origin });
 
   useEffect(() => {
     if (!published) return;

@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { register, publish, openShareDialog, setName, publishButton } from "./helpers.js";
-import { API_BASE } from "./config.js";
+import { API_BASE, API_ORIGIN } from "./config.js";
 
 const slug = (p) => `${p}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
@@ -134,5 +134,27 @@ test.describe("publishing and sharing", () => {
     );
     expect(dangerous).toBe(0);
     await visitor.close();
+  });
+
+  test("a shared link previews as the portfolio, not as the app", async ({ page, request }) => {
+    // What a crawler sees. Slack, LinkedIn and WhatsApp fetch the URL and read
+    // <head> without running any JavaScript, so this is deliberately a raw
+    // HTTP request rather than a page visit.
+    const s = slug("preview");
+    await register(page);
+    await setName(page, "Marie Curie");
+    await publish(page, s);
+
+    const res = await request.get(`${API_ORIGIN}/p/${s}`);
+    expect(res.status()).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('property="og:title" content="Marie Curie');
+    // og:site_name is legitimately "Portfolio Builder"; the title is what used
+    // to be generic for every shared link.
+    expect(html).not.toContain('og:title" content="Portfolio Builder"');
+    // And a human following the same link still ends up in the app.
+    await page.goto(`${API_ORIGIN}/p/${s}`);
+    await expect(page).toHaveURL(new RegExp(`#/p/${s}$`));
+    await expect(page.locator("main")).toContainText("Marie Curie");
   });
 });

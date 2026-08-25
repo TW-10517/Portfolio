@@ -78,3 +78,56 @@ describe("style actually changes the wording", () => {
     expect(a).toBe(b);
   });
 });
+
+describe("the offline writer speaks every language the app offers", () => {
+  const brief = {
+    name: "Jamie Chen",
+    roles: "Engineer",
+    topSkills: ["React", "Node"],
+    email: "jamie@example.com",
+  };
+
+  it("writes the narration in Japanese", async () => {
+    const text = await provider.writeScript(brief, "skills", { language: "Japanese", style: "professional" });
+    expect(text).toMatch(/[぀-ヿ一-鿿]/);
+    // The skills themselves are the author's own words and stay untouched.
+    expect(text).toContain("React");
+    expect(text).not.toMatch(/toolkit/i);
+  });
+
+  it("writes the narration in Tamil", async () => {
+    const text = await provider.writeScript(brief, "skills", { language: "Tamil", style: "professional" });
+    expect(text).toMatch(/[஀-௿]/);
+    expect(text).toContain("React");
+    expect(text).not.toMatch(/toolkit/i);
+  });
+
+  it("still invents nothing in another language", async () => {
+    // No email in the brief, so no contact line — in any language.
+    const text = await provider.writeScript({}, "closing", { language: "Japanese", audience: "recruiter" });
+    expect(text).not.toContain("@");
+    const tamil = await provider.writeScript({}, "closing", { language: "Tamil", audience: "recruiter" });
+    expect(tamil).not.toContain("@");
+  });
+
+  it("leaves a scene empty rather than padding it, in any language", async () => {
+    for (const language of ["English", "Japanese", "Tamil"]) {
+      expect(await provider.writeScript({ awards: [] }, "achievements", { language })).toBe("");
+      expect(await provider.writeScript({ quote: "" }, "testimonial", { language })).toBe("");
+    }
+  });
+
+  it("keeps English output exactly as it was", async () => {
+    const text = await provider.writeScript(brief, "skills", { style: "professional" });
+    expect(text).toBe("My core toolkit includes React and Node.");
+  });
+
+  it("does not leave a double space where phrases used to be concatenated", async () => {
+    const text = await provider.writeScript(
+      { ...brief, learning: ["Rust"] },
+      "skills",
+      { style: "professional" }
+    );
+    expect(text).not.toMatch(/ {2}/);
+  });
+});

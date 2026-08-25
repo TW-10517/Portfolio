@@ -3,6 +3,7 @@ import { usePortfolioTheme } from "./ThemeContext.jsx";
 import { Reveal } from "./Reveal.jsx";
 import { SectionTag } from "./SectionTag.jsx";
 import { sanitizeUrl } from "../../utils/sanitizeUrl.js";
+import { resolveImageUrl } from "../../utils/imageUrl.js";
 
 export function Blog() {
   const { data, palette, primary, animationLevel } = usePortfolioTheme();
@@ -48,7 +49,7 @@ export function Blog() {
                 className="block rounded-2xl overflow-hidden border"
                 style={{ borderColor: palette.border, background: palette.surface }}
               >
-                {post.thumbnail && <img src={post.thumbnail} alt={post.title} className="w-full aspect-video object-cover" />}
+                {post.thumbnail && <img src={resolveImageUrl(post.thumbnail)} alt={post.title} className="w-full aspect-video object-cover" />}
                 <div className="p-5">
                   <div className="flex gap-2 text-xs mb-2" style={{ color: palette.textFaint }}>
                     {post.date && <span>{post.date}</span>}

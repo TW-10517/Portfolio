@@ -2,13 +2,14 @@ import { useState } from "react";
 import { usePortfolioTheme } from "./ThemeContext.jsx";
 import { Reveal } from "./Reveal.jsx";
 import { SectionTag } from "./SectionTag.jsx";
+import { resolveImageUrl } from "../../utils/imageUrl.js";
 
 function ExperienceCard({ item, open, onToggle, palette, primary }) {
   return (
     <div className="rounded-2xl border p-5 cursor-pointer transition" style={{ borderColor: palette.border, background: palette.surface }} onClick={onToggle}>
       <div className="flex items-start gap-3">
         {item.logo ? (
-          <img src={item.logo} alt={item.company} className="w-11 h-11 rounded-lg object-cover shrink-0" />
+          <img src={resolveImageUrl(item.logo)} alt={item.company} className="w-11 h-11 rounded-lg object-cover shrink-0" />
         ) : (
           <div className="w-11 h-11 rounded-lg shrink-0 flex items-center justify-center font-head font-semibold text-sm" style={{ background: palette.surface2, color: palette.textDim }}>
             {item.company?.[0]}

@@ -48,6 +48,8 @@ export default defineConfig({
         // ~35 registrations per run from one address; the production budget is 30.
         RATE_LIMIT_SCALE: "20",
         CORS_ORIGIN: WEB,
+        // Where /p/:slug bounces a human after a crawler has read its tags.
+        FRONTEND_URL: WEB,
       },
     },
     {
