@@ -279,6 +279,19 @@ Postgres has no `lastInsertRowid`, so inserts need `RETURNING id`.
 `npm run db:backup` is SQLite-only and says so rather than pretending to work —
 on Postgres that's `pg_dump`'s job.
 
+A database that won't open is reported as a configuration problem — the URL
+with its password redacted, the driver's message, and a line about what that
+usually means — rather than as a stack trace from inside a connection pool.
+
+Hosted providers that require TLS work as-is: `pg` parses `?sslmode=require`
+straight from the connection string, so a Neon or Supabase URL needs nothing
+added.
+
+**One caveat worth knowing.** The Postgres suite runs against PGlite, which is
+the same engine but in-process. The `pg`-over-TCP path — pooling, TLS,
+reconnects — is not exercised by any test here. Point a staging instance at it
+before it holds real accounts.
+
 ## Share links and previews
 
 A share link is `https://<api-host>/p/<slug>`, not the app's own `#/p/<slug>`.
