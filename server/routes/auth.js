@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { sql, nowIso } from "../db.js";
 import { forgetUsersImages } from "../imageGc.js";
+import { deliverLink } from "../mail.js";
 import {
   validateRegistration,
   validateLogin,
@@ -22,13 +23,12 @@ const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const VERIFY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
-// No email provider is wired up (by design — this app stays zero-cost and
-// doesn't require connecting a third-party mail service). Until one is
-// plugged in here, links are logged server-side so the flow is fully
-// functional in dev/self-hosted use; swap this for a real send in production.
-function deliverLink(kind, email, url) {
-  console.log(`\n[auth] ${kind} link for ${email}:\n  ${url}\n`);
-}
+// Delivery is configuration, not code: MAIL_TRANSPORT=console (the default)
+// logs the link, MAIL_TRANSPORT=smtp sends it. See server/mail.js.
+//
+// Not awaited anywhere below. Sending is slow and its failure is not the
+// caller's problem — an account exists whether or not the mail server is
+// reachable, and "resend verification" covers the rest.
 
 authRouter.post("/register", registerLimiter, async (req, res) => {
   const { name, email, password } = req.body || {};

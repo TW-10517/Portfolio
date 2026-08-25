@@ -127,7 +127,15 @@ async function postgresDriver() {
   }
 
   const { default: pg } = await import("pg");
-  const pool = new pg.Pool({ connectionString: RAW_URL, max: 10 });
+  // Free Postgres tiers cap concurrent connections far lower than a default
+  // pool assumes, and one process quietly eating the whole allowance is a bad
+  // way to find that out.
+  const max = Number(process.env.DATABASE_POOL_MAX) || 10;
+  const pool = new pg.Pool({ connectionString: RAW_URL, max });
+  // A pooled connection dropped by the server (an idle timeout, a restart)
+  // is emitted here, not at a query. Without a listener Node treats it as an
+  // unhandled 'error' event and takes the process down.
+  pool.on("error", (err) => console.error("[db] idle client error:", err.message));
   return {
     async select(text, params = []) {
       return (await pool.query(toPgPlaceholders(text), params)).rows || [];

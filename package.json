@@ -26,6 +26,7 @@
     "framer-motion": "^11.2.10",
     "jsonwebtoken": "^9.0.3",
     "lz-string": "^1.5.0",
+    "nodemailer": "^9.0.5",
     "pdfjs-dist": "^4.7.76",
     "pg": "^8.23.0",
     "qrcode": "^1.5.3",
@@ -36,6 +37,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.7",
+    "@electric-sql/pglite-socket": "^0.2.10",
     "@playwright/test": "^1.62.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.6",
@@ -45,6 +47,7 @@
     "concurrently": "^10.0.5",
     "jsdom": "^25.0.1",
     "postcss": "^8.4.38",
+    "smtp-server": "^3.19.3",
     "supertest": "^7.2.2",
     "tailwindcss": "^3.4.4",
     "vite": "^8.2.2",

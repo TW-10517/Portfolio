@@ -40,13 +40,22 @@ export function hashesIn(value) {
 // delayed cleanup.
 export const GRACE_MS = 60 * 60 * 1000;
 
+// Timestamps are stored as "YYYY-MM-DD HH:MM:SS" in UTC. Date.parse happens to
+// accept that in V8, but a space separator is implementation-defined, and the
+// failure mode matters here: NaN would make every age comparison false and the
+// collector would silently stop running. Normalising to real ISO makes it
+// defined, and an unparseable value is treated as "too new to touch" so a bad
+// row can never cost someone a photograph.
+export function ageOf(stamp, now) {
+  const parsed = Date.parse(`${String(stamp).replace(" ", "T")}Z`);
+  return Number.isNaN(parsed) ? 0 : now - parsed;
+}
+
 export async function syncOwnership(userId, portfolioData, { now = Date.now() } = {}) {
   const referenced = hashesIn(portfolioData);
   const owned = await sql.all("SELECT hash, created_at FROM image_owners WHERE user_id = ?", [userId]);
 
-  const stale = owned.filter(
-    (row) => !referenced.has(row.hash) && now - Date.parse(`${row.created_at}Z`) > GRACE_MS
-  );
+  const stale = owned.filter((row) => !referenced.has(row.hash) && ageOf(row.created_at, now) > GRACE_MS);
   if (!stale.length) return 0;
 
   const placeholders = stale.map(() => "?").join(",");

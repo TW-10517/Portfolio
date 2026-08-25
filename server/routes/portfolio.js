@@ -72,7 +72,11 @@ portfolioRouter.put("/mine", requireAuth, async (req, res) => {
   // A replaced photo is still stored and still owned, but nothing points at
   // it any more. Re-syncing here is what stops an editing session leaving a
   // trail of dead images behind it.
-  await syncOwnership(req.user.sub, data);
+  //
+  // Housekeeping must never fail the save it is attached to. The portfolio is
+  // already written by this point; letting a collector error turn that into a
+  // 500 would tell the user their work wasn't saved when it was.
+  await syncOwnership(req.user.sub, data).catch((e) => console.error("[images] gc failed:", e.message));
 
   const row = await sql.get("SELECT * FROM portfolios WHERE user_id = ?", [req.user.sub]);
   res.json({ portfolio: { ...row, data: JSON.parse(row.data) } });

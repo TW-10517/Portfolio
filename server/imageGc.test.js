@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import request from "supertest";
 
 // ":memory:" is SQLite. `npm run test:pg` sets TEST_DATABASE_URL=pglite and
@@ -9,7 +9,7 @@ process.env.JWT_SECRET = "test-secret";
 
 const { app } = await import("./app.js");
 const { sql } = await import("./db.js");
-const { hashesIn, GRACE_MS } = await import("./imageGc.js");
+const { hashesIn, GRACE_MS, ageOf, deleteUnreferencedBlobs } = await import("./imageGc.js");
 
 const png = (fill) =>
   Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, fill)]);
@@ -116,5 +116,60 @@ describe("saving a portfolio", () => {
 
     expect(await blobCount(body.hash)).toBe(0);
     expect((await request(app).get(body.url)).status).toBe(404);
+  });
+});
+
+describe("ageOf", () => {
+  const now = Date.parse("2026-08-25T12:00:00Z");
+
+  it("reads the stored timestamp format as UTC", () => {
+    expect(ageOf("2026-08-25 11:00:00", now)).toBe(60 * 60 * 1000);
+  });
+
+  it("treats an unreadable timestamp as brand new", () => {
+    // The safe direction. Age 0 is never past the grace period, so a row we
+    // can't date is left alone rather than collected.
+    for (const bad of ["", "not a date", null, undefined, "0000-13-45 99:99:99"]) {
+      expect(ageOf(bad, now)).toBe(0);
+    }
+  });
+});
+
+describe("collecting blobs", () => {
+  it("never deletes a blob that somebody still claims", async () => {
+    const token = await account();
+    const { body } = await upload(token, png(66));
+    // Runs the sweep directly, with no save to trigger it.
+    await deleteUnreferencedBlobs();
+    expect(await blobCount(body.hash)).toBe(1);
+  });
+
+  it("survives an upload racing the collector", async () => {
+    // The collector can remove an unclaimed blob between the upload's
+    // existence check and its insert. The blob is now written unconditionally
+    // with a conflict ignored, so the claim always has something to point at.
+    const bytes = png(77);
+    const first = await account();
+    const { body } = await upload(first, bytes);
+
+    // Release it, then collect, then upload the same bytes again.
+    await sql.run("DELETE FROM image_owners WHERE hash = ?", [body.hash]);
+    await deleteUnreferencedBlobs();
+    expect(await blobCount(body.hash)).toBe(0);
+
+    const second = await account();
+    const again = await upload(second, bytes);
+    expect(again.status).toBe(201);
+    expect((await request(app).get(again.body.url)).status).toBe(200);
+  });
+
+  it("keeps the save working even when the collector cannot run", async () => {
+    // Housekeeping must not fail the operation it is attached to: the
+    // portfolio is already written when the collector runs.
+    const token = await account();
+    const spy = vi.spyOn(sql, "all").mockRejectedValueOnce(new Error("db went away"));
+    const res = await save(token, { profile: { name: "Ada" }, meta: {} });
+    expect(res.status).toBe(200);
+    spy.mockRestore();
   });
 });

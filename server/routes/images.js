@@ -82,15 +82,16 @@ imageRouter.post(
 
     const stamp = nowIso();
     await sql.tx(async () => {
-      if (!existing) {
-        await sql.run("INSERT INTO image_blobs (hash, mime, bytes, size, created_at) VALUES (?, ?, ?, ?, ?)", [
-          hash,
-          mime,
-          bytes,
-          bytes.length,
-          stamp,
-        ]);
-      }
+      // Written unconditionally rather than only when `existing` was false.
+      // That check happened outside this transaction, and the collector can
+      // remove an unclaimed blob in between — leaving this insert to add an
+      // owner row pointing at a row that no longer exists, which the foreign
+      // key rejects and the uploader sees as a 500. Writing the blob first,
+      // ignoring a conflict, means it is always there to be claimed.
+      await sql.run(
+        D.insertOrIgnore("image_blobs", "hash, mime, bytes, size, created_at", "?, ?, ?, ?, ?"),
+        [hash, mime, bytes, bytes.length, stamp]
+      );
       await sql.run(D.insertOrIgnore("image_owners", "user_id, hash, created_at", "?, ?, ?"), [
         req.user.sub,
         hash,

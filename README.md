@@ -21,8 +21,8 @@ npm run dev         # frontend only
 npm run dev:server  # backend only (http://localhost:4000)
 npm run build       # production build to dist/
 npm run preview     # serve the production build locally
-npm test            # vitest run — 298 tests across 30 files
-npm run test:pg     # the server suites again, against real PostgreSQL (PGlite)
+npm test            # vitest run — 323 tests across 33 files
+npm run test:pg     # the server suites again, against real PostgreSQL (134 tests)
 npm run test:e2e    # playwright — 33 browser specs on isolated ports
 npm run test:all    # both
 ```
@@ -134,7 +134,7 @@ Custom CSS from the Theme tab is passed through `utils/sanitizeCss.js` before be
 npm test
 ```
 
-298 tests across 30 files (Vitest, plus Supertest for the API and Testing Library for components):
+323 tests across 33 files (Vitest, plus Supertest for the API and Testing Library for components):
 
 - **API integration** — `server/routes/auth.integration.test.js`, `portfolio.integration.test.js` (real HTTP against the Express app, real SQLite)
 - **Auth units** — `server/auth.test.js` (hashing, JWT, validation rules)
@@ -145,6 +145,7 @@ npm test
 - **Security** — `sanitizeUrl.test.js` (link scheme allowlist), `server/validatePortfolio.test.js` (save-time structural checks), `server/RateLimitStore.test.js` (persistent rate limiting, on both backends)
 - **Database** — `server/sql.test.js` (placeholder renumbering); every `server/**` suite also runs against PostgreSQL via `npm run test:pg`
 - **Sharing** — `server/preview.test.js` and `server/routes/preview.integration.test.js` (per-portfolio link previews, and that a private one leaks nothing)
+- **Email** — `server/mail.test.js` (routing, both body parts, failures that stay quiet), `server/mailSmtp.integration.test.js` (delivery to a real SMTP server)
 - **Images** — `server/routes/images.integration.test.js` (upload, sniffing, dedup, immutable serving), `server/imageGc.test.js` (deletion actually deletes), `imageUrl.test.js`, `inlineStoredImages.test.js`
 - **Languages** — `voices.test.js` (every phrase, every style, every language)
 - **Utils** — `slug.test.js`, `sanitizeCss.test.js`, `textMetrics.test.js`, `exportImport.test.js`
@@ -268,7 +269,13 @@ precisely so `datetime('now')` and `now()` never have to be reconciled).
 entire server suite — every integration test, byte-for-byte the same
 assertions — against real PostgreSQL 18 via
 [PGlite](https://pglite.dev), which compiles Postgres to WASM and runs
-in-process with no server to install. 97 tests, both backends, in CI.
+in-process with no server to install. 134 tests, both backends, in CI.
+
+`server/postgresTcp.integration.test.js` goes one further and puts PGlite
+behind a **TCP socket speaking the real PostgreSQL wire protocol**, so the
+`pg` driver — the one production actually uses, with its own type parsers and
+connection pool — is exercised too, including a transaction committing and
+rolling back across a pooled connection.
 
 The differences that actually bit, all of which the suite now covers: `MAX()`
 is a scalar in SQLite and an aggregate in Postgres (`GREATEST`); `BIGINT` comes
@@ -287,10 +294,38 @@ Hosted providers that require TLS work as-is: `pg` parses `?sslmode=require`
 straight from the connection string, so a Neon or Supabase URL needs nothing
 added.
 
-**One caveat worth knowing.** The Postgres suite runs against PGlite, which is
-the same engine but in-process. The `pg`-over-TCP path — pooling, TLS,
-reconnects — is not exercised by any test here. Point a staging instance at it
-before it holds real accounts.
+**What is still not covered:** TLS, and how a particular hosted provider
+behaves on idle timeouts and connection caps. `DATABASE_POOL_MAX` exists for
+the second of those, and an idle client dropped by the server is logged rather
+than taking the process down with an unhandled `error` event.
+
+## Email
+
+Reset and verification links go wherever `MAIL_TRANSPORT` says:
+
+```
+MAIL_TRANSPORT=            # console (default) — print the link to the server log
+MAIL_TRANSPORT=smtp        # send it, using SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASSWORD
+```
+
+Console is the default on purpose. Nothing here requires a paid account or a
+third-party service, and a self-hosted instance with one user is well served by
+reading the link out of its own log. SMTP is there when you want real email;
+any provider's free tier works, or your own server, because SMTP is just SMTP.
+
+Sending is never awaited and never throws into a request. An account is created
+whether or not the mail server is reachable — a signup that 500s because email
+is down is worse than one that succeeds with an unsent link, and "resend
+verification" is right there. If `MAIL_TRANSPORT=smtp` but `SMTP_HOST` is
+unset, the link falls back to the log *and says why*, rather than vanishing.
+
+Messages carry both a plain-text and an HTML part: some clients render text by
+preference, and a link that exists only in the HTML is a link some people
+cannot use.
+
+`server/mailSmtp.integration.test.js` runs a real SMTP server on a socket and
+sends to it with the real transport, so delivery is verified rather than
+assumed. TLS and a given provider's authentication are still not covered.
 
 ## Share links and previews
 
@@ -419,7 +454,6 @@ in the editor's preview pane the portfolio renders its sections as a labelled
 
 ## Known gaps
 
-- **No email delivery.** Reset and verification links go to the API server's console. Wire a provider into `deliverLink()` in `server/routes/auth.js`.
 - **Backups are your job on SQLite.** `npm run db:backup` takes a consistent snapshot via SQLite's online backup API (safe on a live WAL database, unlike `cp`) and keeps the newest 10 in `server/backups/`, but nothing schedules it for you. On Postgres, backups are whatever your host provides.
 - **Non-English quality from a *local model* is the model's.** The built-in offline writer handles all three languages itself (see "Narration languages"), but if you point the app at Ollama instead, capability varies sharply by model — `qwen2.5:3b` handles Japanese well and Tamil poorly — so a scene the model can't write in the chosen language is rejected and falls back to English rather than shipping nonsense.
 - **On-screen text stays in the portfolio's own language.** Only the narration and captions are written in the chosen language; names, roles, companies, quotes and skill chips are rendered from your portfolio fields verbatim. That is deliberate — translating someone's job title or their client's testimonial would be inventing content.
