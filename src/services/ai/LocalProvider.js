@@ -8,6 +8,12 @@ import { bankFor } from "./voices.js";
 // the phrasing banks live in voices.js — while the portfolio's own content
 // (names, companies, titles, quotes) is always reproduced exactly as written.
 export class LocalProvider extends AIProvider {
+  // Template substitution with no I/O — concurrency would add scheduling
+  // overhead and nothing else.
+  get concurrency() {
+    return 1;
+  }
+
   get name() {
     return "Basic (offline)";
   }

@@ -3,6 +3,7 @@ import { readImageFile } from "../../utils/exportImport.js";
 import { useAuthStore } from "../../store/useAuthStore.js";
 import { api, ApiError } from "../../utils/api.js";
 import { resolveImageUrl } from "../../utils/imageUrl.js";
+import { notify } from "../../store/useNotices.js";
 
 export function ImageUpload({ value, onChange, label = "Image", round }) {
   const fileRef = useRef(null);
@@ -19,7 +20,7 @@ export function ImageUpload({ value, onChange, label = "Image", round }) {
     // downscaled on the way in, so the cap only needs to stop something
     // absurd being decoded in the browser.
     if (file.size > 12 * 1024 * 1024) {
-      alert("Please choose an image under 12MB.");
+      notify("That image is over 12MB. Please choose a smaller one.");
       return;
     }
     setBusy(true);
@@ -30,7 +31,7 @@ export function ImageUpload({ value, onChange, label = "Image", round }) {
       onChange(stored);
       setNote(warning);
     } catch {
-      alert("Sorry — that image couldn't be read. Try a different file.");
+      notify("That image couldn't be read. Try a different file.");
     } finally {
       setBusy(false);
     }

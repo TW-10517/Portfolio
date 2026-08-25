@@ -20,6 +20,8 @@ import { TabBlog } from "../components/editor/TabBlog.jsx";
 import { TabContact } from "../components/editor/TabContact.jsx";
 import { TabTheme } from "../components/editor/TabTheme.jsx";
 import { TabAIVideo } from "../components/editor/TabAIVideo.jsx";
+import { notify } from "../store/useNotices.js";
+import { Toaster } from "../components/ui/Toaster.jsx";
 
 const MIN_EDITOR_WIDTH = 320;
 const MIN_PREVIEW_WIDTH = 340;
@@ -89,7 +91,7 @@ export function EditorPage() {
       const json = await readJsonFile(file);
       setAll(json);
     } catch {
-      alert("That file couldn't be read as valid portfolio JSON.");
+      notify("That file isn't a portfolio export — it couldn't be read as valid JSON.");
     }
     e.target.value = "";
   };
@@ -312,6 +314,7 @@ export function EditorPage() {
 
       <ShareModal open={shareOpen} onClose={() => setShareOpen(false)} />
       <AccountModal open={accountOpen} onClose={() => setAccountOpen(false)} />
+      <Toaster />
     </div>
   );
 }

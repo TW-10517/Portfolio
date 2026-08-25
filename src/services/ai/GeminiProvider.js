@@ -13,6 +13,12 @@ export class GeminiProvider extends AIProvider {
     this.apiKey = apiKey;
   }
 
+  // A cloud API answers several at once happily, and this is the difference
+  // between seven waits and two.
+  get concurrency() {
+    return 4;
+  }
+
   get name() {
     return "Gemini";
   }

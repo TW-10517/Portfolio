@@ -112,4 +112,30 @@ test.describe("editor", () => {
     // 1600 is MAX_IMAGE_DIMENSION in src/utils/exportImport.js.
     expect(dims).toEqual([1600, 1067]);
   });
+
+  test("a failed import explains itself instead of freezing the page", async ({ page }) => {
+    // These used to be window.alert(). An alert blocks the page until it is
+    // dismissed, can't be styled, reads as a browser failure rather than as
+    // this app telling you something — and some browsers suppress it outright,
+    // which turns "here is why nothing happened" into nothing happening.
+    await register(page);
+
+    await page.locator('input[type="file"][accept="application/json"]').setInputFiles({
+      name: "not-a-portfolio.json",
+      mimeType: "application/json",
+      buffer: Buffer.from("{ this is not json at all"),
+    });
+
+    const notice = page.getByRole("alert").filter({ hasText: /portfolio export/i });
+    await expect(notice).toBeVisible();
+    // Announced, not just drawn.
+    await expect(notice).toHaveAttribute("aria-live", "assertive");
+
+    // And the page is still usable rather than blocked behind a dialog.
+    await page.click("text=Skills");
+    await expect(page.locator("main h2").first()).toBeVisible();
+
+    await notice.getByRole("button", { name: "Dismiss" }).click();
+    await expect(notice).toHaveCount(0);
+  });
 });

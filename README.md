@@ -23,9 +23,9 @@ npm run dev         # frontend only
 npm run dev:server  # backend only (http://localhost:4000)
 npm run build       # production build to dist/
 npm run preview     # serve the production build locally
-npm test            # vitest run — 335 tests across 36 files
+npm test            # vitest run — 351 tests across 39 files
 npm run test:pg     # the server suites again, against real PostgreSQL (146 tests)
-npm run test:e2e    # playwright — 33 browser specs on isolated ports
+npm run test:e2e    # playwright — 34 browser specs on isolated ports
 npm run test:all    # both
 ```
 
@@ -84,6 +84,27 @@ The AI Video tab turns the portfolio you've already filled in into a narrated vi
 2. **Narration** (`services/ai/` + `services/video/aiWriter.js`) — an AI provider phrases the facts the planner selected. Scene duration is derived from the resulting word count, so timing always matches what's actually spoken.
 3. **Playback and export** (`services/video/player.js`, `sceneRenderer.js`, `captions.js`, `tts.js`, `exportVideo.js`) — scenes are drawn to a 1280×720 canvas, narrated with the browser's built-in `SpeechSynthesis`, captioned from the known script (no speech recognition needed), and recorded via `MediaRecorder`.
 
+### Trying combinations
+
+Changing style, audience, length or language rewrites the script, and against
+a real model that is seconds per scene. Two things made that worse than it
+needed to be: scenes were written strictly one after another, and nothing was
+remembered — so trying four styles cost four full generations, and going back
+to the first one paid for it again.
+
+Narration is a pure function of the scene's brief and the options, so
+`scriptCache.js` keys on exactly that and revisiting a combination is free.
+Scenes are written concurrently, with the limit set by the provider: Gemini 4,
+because a cloud API is happy with several in flight; Ollama 2, because a model
+on your own GPU doesn't really overlap but one request tokenising while another
+runs does help; the offline writer 1, since there is no I/O to overlap.
+
+Three things the tests pin down, because each is a way to be subtly wrong:
+results stay in **plan order** however they finish (order is the video), a
+**fallback is never cached** (it isn't what your chosen provider would say once
+it's reachable), and **"rewrite this scene" drops the cached entry** rather
+than handing back the take you just rejected.
+
 ### AI providers
 
 Selected automatically in this order, and swappable in the tab. **Nothing here ever requires payment or a mandatory API key.**
@@ -101,6 +122,26 @@ The hard rule is that the AI may **rephrase** your portfolio, never **add** to i
 The check is deliberately narrow — it flags proper nouns and digits (companies, titles, certifications, statistics, dates) rather than trying to judge vague adjectives, so legitimate rephrasing survives.
 
 ### Export
+
+Exporting used to take exactly as long as the video: `MediaRecorder` records
+the canvas as it plays, and it timestamps frames by wall clock, so frames
+pushed faster than real time just make a shorter film. A 77-second video cost
+77 seconds and nothing about the machine could shorten it.
+
+`fastExport.js` uses **WebCodecs** instead. Each frame carries the timestamp we
+give it, so the encoder runs as fast as frames can be drawn while playback
+stays correct — measured at 42s for that same 77-second video, producing a
+real H.264 MP4. Drawing a frame costs well under a millisecond, so the export
+is now bound by encoding rather than by patience.
+
+What this path can't do is narration. Speech is real-time by nature and
+`speechSynthesis` output can't be captured programmatically at all, so
+**Narration is an explicit toggle, off by default**, and turning it on falls
+back to the recorder with its full-length wait. The export note says which you
+got and what the other one would cost.
+
+Browsers without `VideoEncoder` fall back to the recorder automatically.
+
 
 `recordScenePlan()` prefers **MP4 (H.264 + AAC)** since that's what editors, phones, and upload forms accept without conversion, falling back through WebM variants based on what the browser's `MediaRecorder` supports; the download filename always matches what was actually recorded. Narration audio is captured via `getDisplayMedia` if you grant it. Note that the voice comes from the *operating system's* speech engine rather than the page, so sharing a single tab usually captures silence — pick "Entire Screen" with "Share system audio". The export measures the captured track's actual signal level and tells you which of the three outcomes happened (audio, silence, or no track), instead of claiming success because a track existed. Either way the export succeeds and the burned-in captions carry the script.
 
@@ -136,7 +177,7 @@ Custom CSS from the Theme tab is passed through `utils/sanitizeCss.js` before be
 npm test
 ```
 
-335 tests across 36 files (Vitest, plus Supertest for the API and Testing Library for components):
+351 tests across 39 files (Vitest, plus Supertest for the API and Testing Library for components):
 
 - **API integration** — `server/routes/auth.integration.test.js`, `portfolio.integration.test.js` (real HTTP against the Express app, real SQLite)
 - **Auth units** — `server/auth.test.js` (hashing, JWT, validation rules)
@@ -162,7 +203,7 @@ skips jsdom's startup cost.
 npm run test:e2e
 ```
 
-33 Playwright specs in `e2e/`, because almost every serious bug this project
+34 Playwright specs in `e2e/`, because almost every serious bug this project
 has had was invisible to unit tests: narration cut off mid-sentence, an export
 that claimed to have audio and didn't, a share modal that hid your own link
 when you reopened it, focus escaping a dialog, a scene duration field that
@@ -172,7 +213,7 @@ turned "30" into "3025".
 - `share.spec.js` (8) — publish, republish, unpublish, the public share page, link-preview tags
 - `sync.spec.js` (4) — edits surviving a reload and reaching a second browser context
 - `a11y.spec.js` (4) — axe-core over login, both editor modes, the portfolio
-- `editor.spec.js` (4) — tab navigation, adding and removing entries, autosave
+- `editor.spec.js` (5) — tab navigation, adding and removing entries, autosave, a failed import that explains itself
 - `video.spec.js` (4) — script generation, a non-blank rendered frame, retiming a scene, playback
 
 `playwright.config.js` starts both servers itself on ports 4001/5174 against

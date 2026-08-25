@@ -3,6 +3,13 @@
 // portfolio — and must return prose built from those fields. It must never
 // invent companies, projects, numbers, or skills that aren't in the brief.
 export class AIProvider {
+  // How many scenes may be written at once. One by default: a provider that
+  // hasn't said otherwise might be a local model, where several at once is
+  // slower than one at a time.
+  get concurrency() {
+    return 1;
+  }
+
   get name() {
     throw new Error("AIProvider.name not implemented");
   }

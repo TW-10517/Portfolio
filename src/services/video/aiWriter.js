@@ -1,6 +1,7 @@
 import { LocalProvider } from "../ai/LocalProvider.js";
 import { secondsForWords } from "./sceneBuilder.js";
 import { countSpokenWords } from "../../utils/textMetrics.js";
+import { cacheKey, getCached, setCached, forget } from "./scriptCache.js";
 
 const localProvider = new LocalProvider();
 
@@ -40,28 +41,48 @@ async function writeWithRetry(provider, scene, writeOptions, signal) {
 export async function writeNarration(scenePlan, provider, options = {}) {
   const { onProgress, rate = 1, signal, ...writeOptions } = options;
   const usedFallback = [];
-  const scenes = [];
   const total = scenePlan.scenes.length;
+  let done = 0;
 
-  for (const scene of scenePlan.scenes) {
+  const writeOne = async (scene) => {
     // A real LLM takes seconds per scene, so a superseded rebuild must stop
     // here rather than run the whole plan to completion in the background —
     // with a local model that would keep the machine busy writing a script
     // nobody is waiting for any more.
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    onProgress?.({ index: scenes.length, total, title: scene.title });
+
+    const key = cacheKey(provider.name, scene, writeOptions);
+    const remembered = getCached(key);
+    if (remembered !== undefined) {
+      // The whole point of trying combinations: coming back to one you have
+      // already seen should cost nothing.
+      onProgress?.({ index: ++done, total, title: scene.title });
+      return { ...scene, text: remembered, duration: durationForText(remembered, rate), providerName: provider.name };
+    }
+
     let text;
     let usedProviderName = provider.name;
     try {
       text = await writeWithRetry(provider, scene, writeOptions, signal);
+      setCached(key, text);
     } catch (e) {
       if (e?.name === "AbortError") throw e;
       text = await localProvider.writeScript(scene.brief, scene.type, { ...writeOptions, maxWords: scene.maxWords });
       usedProviderName = localProvider.name;
       usedFallback.push(scene.id);
+      // Deliberately not cached: this is what we fell back to, not what the
+      // chosen provider would say once it is reachable again.
     }
-    scenes.push({ ...scene, text, duration: durationForText(text, rate), providerName: usedProviderName });
-  }
+    onProgress?.({ index: ++done, total, title: scene.title });
+    return { ...scene, text, duration: durationForText(text, rate), providerName: usedProviderName };
+  };
+
+  // Written concurrently rather than one after another. Seven scenes against a
+  // provider that takes seconds each was seven waits in a row; the limit comes
+  // from the provider because a cloud API is happy with several in flight
+  // while a model on your own GPU is not.
+  const scenes = await mapWithLimit(scenePlan.scenes, provider.concurrency ?? 1, writeOne);
+
   onProgress?.({ index: total, total, title: "" });
 
   return {
@@ -72,6 +93,21 @@ export async function writeNarration(scenePlan, provider, options = {}) {
   };
 }
 
+// Results stay in input order regardless of which finishes first — the scene
+// order is the video.
+async function mapWithLimit(items, limit, fn) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor++;
+      results[index] = await fn(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 // Regenerates narration for a single scene in place, returning a new scenes array.
 export async function rewriteScene(scenePlan, sceneId, provider, options = {}) {
   const scenes = await Promise.all(
@@ -79,6 +115,9 @@ export async function rewriteScene(scenePlan, sceneId, provider, options = {}) {
       if (scene.id !== sceneId) return scene;
       let text;
       let usedProviderName = provider.name;
+      // "Rewrite this scene" means the user wants a different take, so the
+      // remembered one is dropped rather than handed back.
+      forget(cacheKey(provider.name, scene, options));
       try {
         text = await provider.writeScript(scene.brief, scene.type, { ...options, maxWords: scene.maxWords });
       } catch {

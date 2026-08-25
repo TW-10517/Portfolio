@@ -6,6 +6,7 @@ import { TabShell, SubHeading } from "./TabShell.jsx";
 import { readFileAsDataUrl } from "../../utils/exportImport.js";
 import { ResumeImportModal } from "./ResumeImportModal.jsx";
 import { useRef, useState } from "react";
+import { notify } from "../../store/useNotices.js";
 
 const SOCIALS = ["linkedin", "github", "twitter", "website", "dribbble", "behance", "youtube"];
 
@@ -22,14 +23,14 @@ export function TabProfile() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.type !== "application/pdf") {
-      alert("Please upload a PDF file.");
+      notify("That needs to be a PDF file.");
       return;
     }
     // The PDF is base64'd into the portfolio JSON, which the API caps at 15MB
     // for the whole document — without a limit here a large resume silently
     // pushed the portfolio over that cap and broke saving.
     if (file.size > 5 * 1024 * 1024) {
-      alert("Please choose a PDF under 5MB — it's stored inside your portfolio.");
+      notify("That PDF is over 5MB. It gets stored inside your portfolio, so please pick a smaller one.");
       return;
     }
     set("resumeUrl", await readFileAsDataUrl(file));

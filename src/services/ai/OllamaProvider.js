@@ -19,6 +19,13 @@ export class OllamaProvider extends AIProvider {
     this.baseUrl = (baseUrl || DEFAULT_OLLAMA_URL).replace(/\/+$/, "");
   }
 
+  // Two at a time, not more. The model runs on this machine's own GPU or CPU,
+  // so requests don't really overlap — but one in flight while another is
+  // being tokenised does help, and beyond that they just contend.
+  get concurrency() {
+    return 2;
+  }
+
   get name() {
     return `Ollama (${this.model})`;
   }

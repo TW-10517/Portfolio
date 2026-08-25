@@ -19,6 +19,7 @@ import {
 import { getVoices, isTTSSupported, SPEED_RATES, cancelSpeech } from "../../services/video/tts.js";
 import { playScenePlan, drawFirstFrame, renderAtScene, sceneIndexAtPosition, sceneStartTime, CANVAS_SIZE } from "../../services/video/player.js";
 import { recordScenePlan, downloadBlob, pickSupportedMimeType, fileExtensionForMimeType, containerLabel } from "../../services/video/exportVideo.js";
+import { canFastExport, encodeScenePlan } from "../../services/video/fastExport.js";
 import { drawScene, buildImageBundle } from "../../services/video/sceneRenderer.js";
 import { formatTimestamp } from "../../services/video/captions.js";
 
@@ -119,6 +120,12 @@ export function TabAIVideo() {
   const [dragging, setDragging] = useState(false);
   const [dragSeconds, setDragSeconds] = useState(0);
   const [showCaptions, setShowCaptions] = useState(true);
+  // Narration costs the full running time of the video to export, because
+  // speech is real-time and the only way to capture it is to record the tab
+  // while it plays. Silent export encodes as fast as the machine can draw, so
+  // it is the default and narration is a deliberate choice.
+  const [withNarration, setWithNarration] = useState(false);
+  const fastAvailable = canFastExport();
   const [regeneratingId, setRegeneratingId] = useState(null);
   // Raw text of any duration field currently being edited, so a half-typed or
   // empty value doesn't have to be a valid scene duration.
@@ -481,6 +488,21 @@ export function TabAIVideo() {
     setExportNote("");
     setError("");
     try {
+      if (!withNarration && fastAvailable) {
+        const started = performance.now();
+        const { blob, mimeType, label } = await encodeScenePlan(canvasRef.current, scenePlan, data, {
+          theme: data.theme,
+          showCaptions,
+          onProgress: setExportProgress,
+        });
+        downloadBlob(blob, `${slugify(data.profile?.name || "portfolio")}-video.mp4`);
+        const seconds = Math.max(1, Math.round((performance.now() - started) / 1000));
+        setExportNote(
+          `Downloaded as ${label} in ${seconds}s — captions, no voice. Turn on Narration to include the spoken audio; that one records in real time, so it takes about ${scenePlan.totalSeconds}s.`
+        );
+        return;
+      }
+
       const { blob, audioIncluded, audioHadSound, mimeType } = await recordScenePlan(canvasRef.current, scenePlan, data, {
         theme: data.theme,
         voice: selectedVoice,
@@ -604,6 +626,20 @@ export function TabAIVideo() {
               }`}
             >
               CC {showCaptions ? "On" : "Off"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setWithNarration((v) => !v)}
+              title={
+                withNarration
+                  ? `Records in real time to capture the speech — about ${scenePlan?.totalSeconds || 0}s, and you'll be asked to share a screen`
+                  : "Encodes as fast as your machine can draw. Captions only, no voice."
+              }
+              className={`h-9 px-3 rounded-full text-xs font-medium border transition shrink-0 ${
+                withNarration ? "border-cyan-400 text-cyan-300 bg-cyan-400/10" : "border-slate-700 text-slate-400"
+              }`}
+            >
+              Narration {withNarration ? "On" : "Off"}
             </button>
             <div
               ref={timelineRef}

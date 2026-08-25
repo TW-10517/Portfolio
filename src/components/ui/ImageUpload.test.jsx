@@ -4,6 +4,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ImageUpload } from "./ImageUpload.jsx";
 import { readImageFile } from "../../utils/exportImport.js";
+import { useNotices } from "../../store/useNotices.js";
 
 vi.mock("../../utils/exportImport.js", () => ({ readImageFile: vi.fn() }));
 
@@ -14,11 +15,20 @@ beforeEach(() => {
   // restoreAllMocks() only unwinds spyOn'd functions — the vi.fn() inside the
   // module mock keeps its call history across tests unless cleared here.
   vi.clearAllMocks();
-  vi.spyOn(window, "alert").mockImplementation(() => {});
+  // These used to spy on window.alert. Asserting against the notice store
+  // instead checks what the user is actually shown, and survives the next
+  // change of presentation.
+  useNotices.getState().clear();
   readImageFile.mockResolvedValue("data:image/webp;base64,small");
 });
 
 afterEach(() => vi.restoreAllMocks());
+
+const noticeText = () =>
+  useNotices
+    .getState()
+    .notices.map((n) => n.message)
+    .join(" ");
 
 function fileInput(container) {
   return container.querySelector('input[type="file"]');
@@ -43,7 +53,7 @@ describe("ImageUpload", () => {
     Object.defineProperty(huge, "size", { value: 13 * 1024 * 1024 });
     await userEvent.upload(fileInput(container), huge);
 
-    expect(window.alert).toHaveBeenCalled();
+    expect(noticeText()).toMatch(/over 12MB/i);
     expect(readImageFile).not.toHaveBeenCalled();
     expect(onChange).not.toHaveBeenCalled();
   });
@@ -57,7 +67,7 @@ describe("ImageUpload", () => {
     await userEvent.upload(fileInput(container), photo);
 
     await waitFor(() => expect(onChange).toHaveBeenCalled());
-    expect(window.alert).not.toHaveBeenCalled();
+    expect(useNotices.getState().notices).toHaveLength(0);
   });
 
   it("reports a failed read instead of silently doing nothing", async () => {
@@ -67,7 +77,7 @@ describe("ImageUpload", () => {
 
     await userEvent.upload(fileInput(container), makeFile(64));
 
-    await waitFor(() => expect(window.alert).toHaveBeenCalled());
+    await waitFor(() => expect(noticeText()).toMatch(/couldn't be read/i));
     expect(onChange).not.toHaveBeenCalled();
     // The button must not stay stuck on "Processing…".
     expect(screen.getByRole("button", { name: "Upload file" })).toBeTruthy();
