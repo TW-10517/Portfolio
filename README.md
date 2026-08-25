@@ -21,7 +21,7 @@ npm run dev         # frontend only
 npm run dev:server  # backend only (http://localhost:4000)
 npm run build       # production build to dist/
 npm run preview     # serve the production build locally
-npm test            # vitest run — 291 tests across 29 files
+npm test            # vitest run — 298 tests across 30 files
 npm run test:pg     # the server suites again, against real PostgreSQL (PGlite)
 npm run test:e2e    # playwright — 33 browser specs on isolated ports
 npm run test:all    # both
@@ -134,7 +134,7 @@ Custom CSS from the Theme tab is passed through `utils/sanitizeCss.js` before be
 npm test
 ```
 
-291 tests across 29 files (Vitest, plus Supertest for the API and Testing Library for components):
+298 tests across 30 files (Vitest, plus Supertest for the API and Testing Library for components):
 
 - **API integration** — `server/routes/auth.integration.test.js`, `portfolio.integration.test.js` (real HTTP against the Express app, real SQLite)
 - **Auth units** — `server/auth.test.js` (hashing, JWT, validation rules)
@@ -145,7 +145,7 @@ npm test
 - **Security** — `sanitizeUrl.test.js` (link scheme allowlist), `server/validatePortfolio.test.js` (save-time structural checks), `server/RateLimitStore.test.js` (persistent rate limiting, on both backends)
 - **Database** — `server/sql.test.js` (placeholder renumbering); every `server/**` suite also runs against PostgreSQL via `npm run test:pg`
 - **Sharing** — `server/preview.test.js` and `server/routes/preview.integration.test.js` (per-portfolio link previews, and that a private one leaks nothing)
-- **Images** — `server/routes/images.integration.test.js` (upload, sniffing, dedup, immutable serving), `imageUrl.test.js`, `inlineStoredImages.test.js`
+- **Images** — `server/routes/images.integration.test.js` (upload, sniffing, dedup, immutable serving), `server/imageGc.test.js` (deletion actually deletes), `imageUrl.test.js`, `inlineStoredImages.test.js`
 - **Languages** — `voices.test.js` (every phrase, every style, every language)
 - **Utils** — `slug.test.js`, `sanitizeCss.test.js`, `textMetrics.test.js`, `exportImport.test.js`
 
@@ -320,7 +320,14 @@ impossible to save at all.
   into the JSON on the way out, so a downloaded portfolio is still a file you
   can keep or import anywhere.
 - If the upload can't happen (offline, server down, storage full) the inline
-  copy is kept instead, so the editor never loses a picture you just chose.
+  copy is kept instead, so the editor never loses a picture you just chose. A
+  refusal from the server is shown next to the control — a full quota used to
+  look like success and then resurface as a confusing save failure.
+- **Deleted when nothing claims them** (`server/imageGc.js`). Deleting your
+  account takes your pictures with it; bytes another account is also using
+  survive, because storage is shared by content. Replacing a photo releases the
+  old one on your next save, after an hour's grace so a save from a second tab
+  can't reap something you uploaded a moment ago.
 
 ## Narration languages
 

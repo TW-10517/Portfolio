@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { sql, nowIso } from "../db.js";
+import { syncOwnership } from "../imageGc.js";
 import { validatePortfolioData } from "../validatePortfolio.js";
 import { requireAuth, hashPassword, verifyPassword } from "../auth.js";
 
@@ -67,6 +68,11 @@ portfolioRouter.put("/mine", requireAuth, async (req, res) => {
       [req.user.sub, slug, dataJson, vis, pw, stamp, stamp]
     );
   }
+
+  // A replaced photo is still stored and still owned, but nothing points at
+  // it any more. Re-syncing here is what stops an editing session leaving a
+  // trail of dead images behind it.
+  await syncOwnership(req.user.sub, data);
 
   const row = await sql.get("SELECT * FROM portfolios WHERE user_id = ?", [req.user.sub]);
   res.json({ portfolio: { ...row, data: JSON.parse(row.data) } });

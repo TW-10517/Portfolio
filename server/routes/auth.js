@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { sql, nowIso } from "../db.js";
+import { forgetUsersImages } from "../imageGc.js";
 import {
   validateRegistration,
   validateLogin,
@@ -141,6 +142,10 @@ authRouter.delete("/me", requireAuth, async (req, res) => {
   // (it's off by default per-connection), so delete the child row explicitly
   // rather than relying on it and silently orphaning portfolios.
   await sql.run("DELETE FROM portfolios WHERE user_id = ?", [row.id]);
+  // Their uploaded pictures too — a delete that leaves someone's photograph
+  // on the server, still downloadable by anyone with the link, is not a
+  // delete. Bytes shared with another account survive; the claim doesn't.
+  await forgetUsersImages(row.id);
   await sql.run("DELETE FROM users WHERE id = ?", [row.id]);
   res.status(204).end();
 });

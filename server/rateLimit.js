@@ -36,3 +36,6 @@ function limiter(limit) {
 export const loginLimiter = limiter(20);
 export const registerLimiter = limiter(30);
 export const tokenLimiter = limiter(30);
+// Uploads are per-account rather than per-attack: a portfolio with a photo on
+// every project is a few dozen files, and this leaves room for redoing them.
+export const uploadLimiter = limiter(200);

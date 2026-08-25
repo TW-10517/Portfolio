@@ -3,6 +3,7 @@ import crypto from "crypto";
 import express from "express";
 import { sql, D, nowIso } from "../db.js";
 import { requireAuth } from "../auth.js";
+import { uploadLimiter } from "../rateLimit.js";
 
 export const imageRouter = Router();
 
@@ -53,6 +54,10 @@ async function usedBytes(userId) {
 imageRouter.post(
   "/",
   requireAuth,
+  // The per-account byte quota bounds how much can be stored, but nothing
+  // bounded how fast: an account could hammer this endpoint with small files
+  // and make the server hash and write all of them.
+  uploadLimiter,
   express.raw({ type: () => true, limit: MAX_IMAGE_BYTES }),
   async (req, res) => {
     const bytes = req.body;

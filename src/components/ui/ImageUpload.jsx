@@ -1,12 +1,13 @@
 import { useRef, useState } from "react";
 import { readImageFile } from "../../utils/exportImport.js";
 import { useAuthStore } from "../../store/useAuthStore.js";
-import { api } from "../../utils/api.js";
+import { api, ApiError } from "../../utils/api.js";
 import { resolveImageUrl } from "../../utils/imageUrl.js";
 
 export function ImageUpload({ value, onChange, label = "Image", round }) {
   const fileRef = useRef(null);
   const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
   const token = useAuthStore((s) => s.token);
 
   const handleFile = async (e) => {
@@ -22,9 +23,12 @@ export function ImageUpload({ value, onChange, label = "Image", round }) {
       return;
     }
     setBusy(true);
+    setNote("");
     try {
       const downscaled = await readImageFile(file);
-      onChange(await store(downscaled, token));
+      const { value: stored, warning } = await store(downscaled, token);
+      onChange(stored);
+      setNote(warning);
     } catch {
       alert("Sorry — that image couldn't be read. Try a different file.");
     } finally {
@@ -62,6 +66,11 @@ export function ImageUpload({ value, onChange, label = "Image", round }) {
             </button>
           )}
         </div>
+        {note && (
+          <p role="status" className="text-[11px] text-amber-400">
+            {note}
+          </p>
+        )}
         <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} className="hidden" />
       </div>
     </div>
@@ -77,12 +86,22 @@ export function ImageUpload({ value, onChange, label = "Image", round }) {
 // someone just chose. Those still count against the document's size, which is
 // why the size guard on the save path stays.
 async function store(dataUrl, token) {
-  if (!token || !dataUrl.startsWith("data:")) return dataUrl;
+  if (!token || !dataUrl.startsWith("data:")) return { value: dataUrl, warning: "" };
   try {
     const blob = await (await fetch(dataUrl)).blob();
     const { url } = await api.uploadImage(token, blob);
-    return url;
-  } catch {
-    return dataUrl;
+    return { value: url, warning: "" };
+  } catch (e) {
+    // Keeping the inline copy means the editor never loses the picture
+    // someone just chose. But it used to do that silently, so a full storage
+    // quota looked like success and then turned into a confusing failure two
+    // steps later, when the oversized document wouldn't save. A refusal from
+    // the server is worth saying out loud; being offline is not, since the
+    // next upload will simply work.
+    const refused = e instanceof ApiError && e.status >= 400 && e.status !== 401;
+    return {
+      value: dataUrl,
+      warning: refused ? `${e.message} Kept in this portfolio for now, which makes it larger.` : "",
+    };
   }
 }
