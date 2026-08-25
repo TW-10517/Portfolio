@@ -15,9 +15,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 22, not 20: better-sqlite3 13 declares engines >= 22, and CI on 20 fell
+      # over at the first import. Local development runs 24, so anything below
+      # 22 was only ever going to be tested here.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       # better-sqlite3 ships prebuilt binaries for current Node LTS on Linux,
@@ -60,7 +63,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - run: npm ci

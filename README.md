@@ -8,6 +8,8 @@ This started as a no-backend MVP (React SPA, `localStorage` only). It now has a 
 
 ## Quick start
 
+Node 22 or newer (`better-sqlite3` 13 requires it).
+
 ```bash
 npm install
 npm run dev:all
