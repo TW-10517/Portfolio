@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import request from "supertest";
 import crypto from "crypto";
 
-process.env.DATABASE_URL = ":memory:";
+// ":memory:" is SQLite. `npm run test:pg` sets TEST_DATABASE_URL=pglite and
+// runs this exact file against real PostgreSQL (compiled to WASM, no server),
+// which is the only way the Postgres path stays honest.
+process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || ":memory:";
 process.env.JWT_SECRET = "test-secret";
 
 const { app } = await import("../app.js");

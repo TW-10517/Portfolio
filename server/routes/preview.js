@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db } from "../db.js";
+import { sql } from "../db.js";
 import { buildPreviewHtml } from "../preview.js";
 
 export const previewRouter = Router();
@@ -14,8 +14,8 @@ function canonicalUrl(req) {
   return `${proto}://${req.headers.host}${req.originalUrl}`;
 }
 
-previewRouter.get("/:slug", (req, res) => {
-  const row = db.prepare("SELECT slug, data, visibility FROM portfolios WHERE slug = ?").get(req.params.slug);
+previewRouter.get("/:slug", async (req, res) => {
+  const row = await sql.get("SELECT slug, data, visibility FROM portfolios WHERE slug = ?", [req.params.slug]);
 
   // Deliberately no 404: an unknown slug and a private one must be
   // indistinguishable, and a human following a stale link should still land

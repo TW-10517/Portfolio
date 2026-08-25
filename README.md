@@ -21,7 +21,8 @@ npm run dev         # frontend only
 npm run dev:server  # backend only (http://localhost:4000)
 npm run build       # production build to dist/
 npm run preview     # serve the production build locally
-npm test            # vitest run — 286 tests across 28 files
+npm test            # vitest run — 291 tests across 29 files
+npm run test:pg     # the server suites again, against real PostgreSQL (PGlite)
 npm run test:e2e    # playwright — 33 browser specs on isolated ports
 npm run test:all    # both
 ```
@@ -51,7 +52,7 @@ Validation rules are enforced twice — client-side in `LoginPage.jsx`/`Register
 
 > **No email provider is wired up** — by design, so the app never requires connecting a third-party mail service. Password-reset and verification links are printed to the API server's console instead (`deliverLink()` in `server/routes/auth.js`). Copy the link from the terminal to complete either flow locally, and swap in a real provider there before relying on it in production.
 
-**Moving to a hosted database:** `server/db.js` opens `better-sqlite3` against a local file path from `DATABASE_URL` (default `server/data.sqlite`) — it does not speak Postgres. To deploy against a hosted database (e.g. Supabase), swap `better-sqlite3` for a Postgres client (`pg` or `postgres.js`) and update the `CREATE TABLE`/query syntax in `server/db.js` and `server/routes/*.js` (SQLite and Postgres SQL differ — e.g. `AUTOINCREMENT` vs `SERIAL`). `JWT_SECRET` must also be set to a real secret in production; the code falls back to a well-known insecure default if unset.
+**SQLite or Postgres — `DATABASE_URL` decides.** A path (or nothing) gets SQLite; a `postgres://` URL gets PostgreSQL. Nothing else changes and the schema is created on first boot either way. See "Choosing a database" below. `JWT_SECRET` must be set to a real secret in production; the code falls back to a well-known insecure default if unset.
 
 ## Routes
 
@@ -133,7 +134,7 @@ Custom CSS from the Theme tab is passed through `utils/sanitizeCss.js` before be
 npm test
 ```
 
-286 tests across 28 files (Vitest, plus Supertest for the API and Testing Library for components):
+291 tests across 29 files (Vitest, plus Supertest for the API and Testing Library for components):
 
 - **API integration** — `server/routes/auth.integration.test.js`, `portfolio.integration.test.js` (real HTTP against the Express app, real SQLite)
 - **Auth units** — `server/auth.test.js` (hashing, JWT, validation rules)
@@ -141,7 +142,8 @@ npm test
 - **Video** — `sceneBuilder.test.js`, `timing.test.js`, `exportFormat.test.js`, `player.test.js`
 - **Components** — `ShareModal.test.jsx` (publish state and view count), `RequireAuth.test.jsx` (the editor guard), `ImageUpload.test.jsx` (upload limits and failure handling), `Modal.test.jsx` (focus trap, Escape, focus restore)
 - **Store** — `usePortfolioStore.test.js`, `useAuthStore.test.js` (expired-session handling)
-- **Security** — `sanitizeUrl.test.js` (link scheme allowlist), `server/validatePortfolio.test.js` (save-time structural checks), `server/SqliteRateLimitStore.test.js` (persistent rate limiting)
+- **Security** — `sanitizeUrl.test.js` (link scheme allowlist), `server/validatePortfolio.test.js` (save-time structural checks), `server/RateLimitStore.test.js` (persistent rate limiting, on both backends)
+- **Database** — `server/sql.test.js` (placeholder renumbering); every `server/**` suite also runs against PostgreSQL via `npm run test:pg`
 - **Sharing** — `server/preview.test.js` and `server/routes/preview.integration.test.js` (per-portfolio link previews, and that a private one leaks nothing)
 - **Images** — `server/routes/images.integration.test.js` (upload, sniffing, dedup, immutable serving), `imageUrl.test.js`, `inlineStoredImages.test.js`
 - **Languages** — `voices.test.js` (every phrase, every style, every language)
@@ -182,9 +184,10 @@ production budget allows, so the config sets `RATE_LIMIT_SCALE=20` — a knob
 `server/rateLimit.js` ignores entirely when `NODE_ENV=production`, so it can't
 weaken a live server.
 
-`.github/workflows/ci.yml` runs the Vitest suite, a production build and the
-Playwright suite on every push and pull request, and asserts that the server
-still refuses to boot in production with the insecure dev `JWT_SECRET`.
+`.github/workflows/ci.yml` runs the Vitest suite on SQLite, the server suites
+again on PostgreSQL, a production build and the Playwright suite on every push
+and pull request, and asserts that the server still refuses to boot in
+production with the insecure dev `JWT_SECRET`.
 
 ### Clearing test accounts
 
@@ -202,12 +205,19 @@ npm run db:clear-test-users -- '%@qa.local'
 server/
   index.js              Binds the port (nothing else)
   app.js                Express app: CORS, JSON body parsing, mounts routers — importable by tests
-  db.js                 SQLite connection + schema (users, portfolios)
+  sql.js                One async query interface over SQLite and PostgreSQL; picks one from DATABASE_URL
+  schema.js             The DDL for each dialect, plus the idempotent column migrations
+  db.js                 What everything else imports: runs the migration, re-exports sql
+  preview.js            Builds the link-preview document for a shared portfolio
   auth.js               Password hashing, JWT signing/verification, validation, requireAuth middleware
   rateLimit.js          Per-purpose rate limiters (login / register / token flows)
+  RateLimitStore.js     Persists those counters in whichever database is in use
+  validatePortfolio.js  Structural + URL checks run before anything is written
   routes/
     auth.js               /api/auth/* — register, login, logout, me, reset, verify, change-password, delete
     portfolio.js          /api/portfolios/mine (auth), /by-slug/:slug + /unlock (public)
+    images.js             /api/images — content-addressed upload and immutable serving
+    preview.js            /p/:slug — link-preview tags for crawlers, redirect for humans
 src/
   components/
     auth/               RequireAuth (route guard), AccountModal
@@ -217,7 +227,7 @@ src/
     ui/                 Field, Button, Modal, Toggle, TagInput, ReorderList, ImageUpload, ColorPicker, StringListManager
     ErrorBoundary.jsx
   services/
-    ai/                 AIProvider (contract), LocalProvider, OllamaProvider, GeminiProvider, factGuard, index (selection)
+    ai/                 AIProvider (contract), LocalProvider, voices (per-language phrasing), OllamaProvider, GeminiProvider, factGuard, index (selection)
     video/              sceneBuilder, aiWriter, sceneRenderer, player, tts, captions, exportVideo
   data/                 defaults.js (seeded placeholder content), skillKeywords.js
   hooks/                useTyping, useActiveSection, useTheme
@@ -228,6 +238,46 @@ src/
   utils/                uid, slug, exportImport, parseResume, sanitizeCss, api.js (fetch wrapper)
 legacy-static/          Earlier standalone static-HTML portfolio (reference only, not built by Vite)
 ```
+
+## Choosing a database
+
+```
+DATABASE_URL=                            # SQLite at server/data.sqlite
+DATABASE_URL=./data/portfolio.sqlite     # SQLite somewhere else
+DATABASE_URL=postgres://user:pw@host/db  # PostgreSQL
+DATABASE_URL=pglite                      # PostgreSQL in WASM, in-process (tests)
+```
+
+SQLite is the default and is the right answer for a single host with a real
+disk: no service, no credentials, no setup. Postgres exists for the case that
+actually breaks SQLite — hosting with an **ephemeral filesystem**, where the
+database file quietly disappears on every redeploy. The free tier of Supabase,
+Neon or Render covers it, so this stays inside the project's "nothing paid is
+required" rule.
+
+`server/sql.js` is one async interface over both. Everything is async even on
+SQLite, where the driver is synchronous — an interface that changes shape per
+backend is how you end up with a Postgres path nobody ever runs. Queries are
+written once with `?` placeholders and renumbered to `$1…` for Postgres.
+`server/schema.js` holds the DDL for each dialect written out in full rather
+than generated, because they differ in exactly three ways (identity columns,
+`BLOB` vs `BYTEA`, and the fact that timestamps are now generated in JS
+precisely so `datetime('now')` and `now()` never have to be reconciled).
+
+**The Postgres path is tested, not just written.** `npm run test:pg` runs the
+entire server suite — every integration test, byte-for-byte the same
+assertions — against real PostgreSQL 18 via
+[PGlite](https://pglite.dev), which compiles Postgres to WASM and runs
+in-process with no server to install. 97 tests, both backends, in CI.
+
+The differences that actually bit, all of which the suite now covers: `MAX()`
+is a scalar in SQLite and an aggregate in Postgres (`GREATEST`); `BIGINT` comes
+back as a *string*, so a rate-limit window compared as `"1756…" <= 1756…` and
+never expired; `SUM()` returns numeric, which arrives as a string too; and
+Postgres has no `lastInsertRowid`, so inserts need `RETURNING id`.
+
+`npm run db:backup` is SQLite-only and says so rather than pretending to work —
+on Postgres that's `pg_dump`'s job.
 
 ## Share links and previews
 
@@ -318,7 +368,7 @@ controls.
 
 **Rate limit counters are persisted.** `express-rate-limit`'s default store
 lives in process memory, so every restart handed out a fresh allowance and
-nothing was shared between workers. `server/SqliteRateLimitStore.js` keeps them
+nothing was shared between workers. `server/RateLimitStore.js` keeps them
 in the database that is already the source of truth.
 
 **Dialogs trap focus.** `src/components/ui/Modal.jsx` moves focus into the
@@ -350,7 +400,7 @@ in the editor's preview pane the portfolio renders its sections as a labelled
 ## Known gaps
 
 - **No email delivery.** Reset and verification links go to the API server's console. Wire a provider into `deliverLink()` in `server/routes/auth.js`.
-- **SQLite only.** `server/db.js` doesn't speak Postgres — see "Moving to a hosted database" above. It's a single file on one disk: `npm run db:backup` takes a consistent snapshot via SQLite's online backup API (safe on a live WAL database, unlike `cp`), keeping the newest 10 in `server/backups/`.
+- **Backups are your job on SQLite.** `npm run db:backup` takes a consistent snapshot via SQLite's online backup API (safe on a live WAL database, unlike `cp`) and keeps the newest 10 in `server/backups/`, but nothing schedules it for you. On Postgres, backups are whatever your host provides.
 - **Non-English quality from a *local model* is the model's.** The built-in offline writer handles all three languages itself (see "Narration languages"), but if you point the app at Ollama instead, capability varies sharply by model — `qwen2.5:3b` handles Japanese well and Tamil poorly — so a scene the model can't write in the chosen language is rejected and falls back to English rather than shipping nonsense.
 - **On-screen text stays in the portfolio's own language.** Only the narration and captions are written in the chosen language; names, roles, companies, quotes and skill chips are rendered from your portfolio fields verbatim. That is deliberate — translating someone's job title or their client's testimonial would be inventing content.
 - **Video export depends on browser support, and can't be fixed from here.** `MediaRecorder` MP4 muxing and `getDisplayMedia` audio capture vary by browser. The export picks the best container the browser supports and degrades to WebM rather than failing, and it reports afterwards whether narration was actually captured instead of claiming it was. The audio detour exists because `speechSynthesis` output cannot be captured programmatically by any browser API — there is no way to route it into a `MediaStream`, so a tab-audio share is the only route. Shipping a WASM TTS engine purely to work around that would cost more than it's worth.

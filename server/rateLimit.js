@@ -1,5 +1,5 @@
 import rateLimit from "express-rate-limit";
-import { SqliteRateLimitStore } from "./SqliteRateLimitStore.js";
+import { RateLimitStore } from "./RateLimitStore.js";
 
 const WINDOW_MS = 15 * 60 * 1000;
 
@@ -20,7 +20,7 @@ function limiter(limit) {
     limit: limit * scale(),
     // Persisted rather than in-memory, so a restart doesn't hand out a fresh
     // allowance and separate processes share one counter.
-    store: new SqliteRateLimitStore(),
+    store: new RateLimitStore(),
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: "Too many attempts. Please wait a while before trying again." },

@@ -1,93 +1,10 @@
-import Database from "better-sqlite3";
-import path from "path";
-import { fileURLToPath } from "url";
+// Kept as the single import point for the rest of the server. The actual
+// driver selection lives in sql.js and the schema in schema.js; this file
+// exists so that every consumer says `from "../db.js"` and none of them has to
+// care which database is underneath.
+import { sql, dialect, D, nowIso } from "./sql.js";
+import { migrate } from "./schema.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = process.env.DATABASE_URL || path.join(__dirname, "data.sqlite");
+await migrate();
 
-export const db = new Database(dbPath);
-db.pragma("journal_mode = WAL");
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    name TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS portfolios (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    slug TEXT NOT NULL UNIQUE,
-    data TEXT NOT NULL,
-    visibility TEXT NOT NULL DEFAULT 'public',
-    password TEXT DEFAULT '',
-    views INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_portfolios_user_id ON portfolios(user_id);
-
-  -- Rate-limit counters. express-rate-limit's default store keeps these in
-  -- process memory, so every restart handed attackers a fresh allowance and
-  -- nothing was shared between workers. Persisting them here costs one small
-  -- table and makes the limits mean what they say.
-  CREATE TABLE IF NOT EXISTS rate_limits (
-    key TEXT PRIMARY KEY,
-    hits INTEGER NOT NULL,
-    reset_at INTEGER NOT NULL
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_rate_limits_reset_at ON rate_limits(reset_at);
-
-  -- Uploaded images, out of the portfolio JSON.
-  --
-  -- Inline base64 made every save re-upload every photo, and a portfolio with
-  -- enough of them simply could not be saved — it exceeded the API's body
-  -- limit and there was nothing the user could do about it. Blobs live here
-  -- and the document keeps a short URL.
-  --
-  -- The key is the SHA-256 of the bytes, so re-uploading the same file (or two
-  -- people using the same image) costs nothing and the URL can be cached
-  -- forever: the content at a given hash can never change.
-  CREATE TABLE IF NOT EXISTS image_blobs (
-    hash TEXT PRIMARY KEY,
-    mime TEXT NOT NULL,
-    bytes BLOB NOT NULL,
-    size INTEGER NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-  );
-
-  -- Who uploaded what. Separate from the blob because the same bytes can be
-  -- shared: this is what lets a user's images be removed with their account
-  -- and what a per-user quota is counted from.
-  CREATE TABLE IF NOT EXISTS image_owners (
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    hash TEXT NOT NULL REFERENCES image_blobs(hash) ON DELETE CASCADE,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    PRIMARY KEY (user_id, hash)
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_image_owners_hash ON image_owners(hash);
-`);
-
-// Idempotent column migrations — SQLite has no "ADD COLUMN IF NOT EXISTS",
-// so we check PRAGMA table_info() and only add columns that are missing.
-// Keeps existing dev databases (and this file's own history) working
-// without a separate migration runner.
-function addColumnIfMissing(table, column, definition) {
-  const existing = db.prepare(`PRAGMA table_info(${table})`).all();
-  if (!existing.some((c) => c.name === column)) {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-  }
-}
-
-addColumnIfMissing("users", "token_version", "INTEGER NOT NULL DEFAULT 0");
-addColumnIfMissing("users", "email_verified", "INTEGER NOT NULL DEFAULT 0");
-addColumnIfMissing("users", "verify_token_hash", "TEXT");
-addColumnIfMissing("users", "verify_token_expires", "TEXT");
-addColumnIfMissing("users", "reset_token_hash", "TEXT");
-addColumnIfMissing("users", "reset_token_expires", "TEXT");
+export { sql, dialect, D, nowIso };

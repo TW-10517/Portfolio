@@ -9,13 +9,20 @@ import "dotenv/config";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { db } from "../db.js";
+import { sql, dialect } from "../db.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Keep this many of the most recent automatic backups; older ones are pruned
 // so an unattended cron job can't fill the disk.
 const KEEP = 10;
+
+// Only SQLite has a file to snapshot. On Postgres this is pg_dump's job, and
+// silently doing nothing would be worse than saying so.
+if (dialect !== "sqlite") {
+  console.error("This backs up a SQLite file. You're on Postgres — use pg_dump, or your host's snapshots.");
+  process.exit(1);
+}
 
 const explicit = process.argv[2];
 const dir = path.join(__dirname, "..", "backups");
@@ -25,7 +32,7 @@ const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const dest = explicit || path.join(dir, `data-${stamp}.sqlite`);
 
 try {
-  await db.backup(dest);
+  await sql.native.backup(dest);
   const { size } = fs.statSync(dest);
   console.log(`Backed up to ${dest} (${(size / 1024).toFixed(0)} KB)`);
 } catch (err) {

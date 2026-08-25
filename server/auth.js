@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
-import { db } from "./db.js";
+import { sql } from "./db.js";
 
 const DEV_SECRET = "dev-only-insecure-secret-change-in-production";
 
@@ -65,13 +65,13 @@ export function signToken(user) {
 // current token_version in the DB — this is what makes logout (and password
 // reset) actually invalidate previously-issued tokens instead of just
 // clearing client-side storage. Costs one indexed lookup per request.
-export function requireAuth(req, res, next) {
+export async function requireAuth(req, res, next) {
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: "Missing or invalid authorization header." });
   try {
     const payload = jwt.verify(token, JWT_SECRET);
-    const row = db.prepare("SELECT token_version FROM users WHERE id = ?").get(payload.sub);
+    const row = await sql.get("SELECT token_version FROM users WHERE id = ?", [payload.sub]);
     if (!row || row.token_version !== payload.tokenVersion) {
       return res.status(401).json({ error: "Invalid or expired session. Please log in again." });
     }

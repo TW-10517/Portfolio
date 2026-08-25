@@ -1,20 +1,23 @@
 import { describe, it, expect, beforeEach } from "vitest";
 
-process.env.DATABASE_URL = ":memory:";
+// ":memory:" is SQLite. `npm run test:pg` sets TEST_DATABASE_URL=pglite and
+// runs this exact file against real PostgreSQL (compiled to WASM, no server),
+// which is the only way the Postgres path stays honest.
+process.env.DATABASE_URL = process.env.TEST_DATABASE_URL || ":memory:";
 process.env.JWT_SECRET = "test-secret";
 
-const { SqliteRateLimitStore } = await import("./SqliteRateLimitStore.js");
-const { db } = await import("./db.js");
+const { RateLimitStore } = await import("./RateLimitStore.js");
+const { sql } = await import("./db.js");
 
 function makeStore(windowMs = 1000, limit = 5) {
-  const store = new SqliteRateLimitStore();
+  const store = new RateLimitStore();
   store.init({ windowMs, limit });
   return store;
 }
 
-beforeEach(() => db.prepare("DELETE FROM rate_limits").run());
+beforeEach(() => sql.run("DELETE FROM rate_limits"));
 
-describe("SqliteRateLimitStore", () => {
+describe("RateLimitStore", () => {
   it("counts hits per key", async () => {
     const store = makeStore();
     expect((await store.increment("1.2.3.4")).totalHits).toBe(1);
@@ -71,7 +74,7 @@ describe("SqliteRateLimitStore", () => {
     await store.increment("k");
     await store.decrement("k");
     await store.decrement("k");
-    const row = db.prepare("SELECT hits FROM rate_limits WHERE key LIKE '%k'").get();
+    const row = await sql.get("SELECT hits FROM rate_limits WHERE key LIKE '%k'");
     expect(row.hits).toBe(0);
   });
 

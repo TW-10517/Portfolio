@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db } from "../db.js";
+import { sql, nowIso } from "../db.js";
 import { validatePortfolioData } from "../validatePortfolio.js";
 import { requireAuth, hashPassword, verifyPassword } from "../auth.js";
 
@@ -19,8 +19,8 @@ function slugify(str) {
 }
 
 // Get the current user's own portfolio (null if they haven't saved one yet)
-portfolioRouter.get("/mine", requireAuth, (req, res) => {
-  const row = db.prepare("SELECT * FROM portfolios WHERE user_id = ?").get(req.user.sub);
+portfolioRouter.get("/mine", requireAuth, async (req, res) => {
+  const row = await sql.get("SELECT * FROM portfolios WHERE user_id = ?", [req.user.sub]);
   res.json({ portfolio: row ? { ...row, data: JSON.parse(row.data) } : null });
 });
 
@@ -34,13 +34,13 @@ portfolioRouter.put("/mine", requireAuth, async (req, res) => {
   const invalid = validatePortfolioData(data);
   if (invalid) return res.status(400).json({ error: invalid });
 
-  const existing = db.prepare("SELECT * FROM portfolios WHERE user_id = ?").get(req.user.sub);
+  const existing = await sql.get("SELECT * FROM portfolios WHERE user_id = ?", [req.user.sub]);
   const baseSlug = slugify(desiredSlug) || `portfolio-${req.user.sub}`;
 
   let slug = baseSlug;
   let suffix = 1;
   while (true) {
-    const clash = db.prepare("SELECT id FROM portfolios WHERE slug = ? AND user_id != ?").get(slug, req.user.sub);
+    const clash = await sql.get("SELECT id FROM portfolios WHERE slug = ? AND user_id != ?", [slug, req.user.sub]);
     if (!clash) break;
     slug = `${baseSlug}-${suffix++}`;
   }
@@ -55,25 +55,28 @@ portfolioRouter.put("/mine", requireAuth, async (req, res) => {
     pw = password ? await hashPassword(password) : existing?.password || "";
   }
 
+  const stamp = nowIso();
   if (existing) {
-    db.prepare(
-      "UPDATE portfolios SET data = ?, slug = ?, visibility = ?, password = ?, updated_at = datetime('now') WHERE user_id = ?"
-    ).run(dataJson, slug, vis, pw, req.user.sub);
+    await sql.run(
+      "UPDATE portfolios SET data = ?, slug = ?, visibility = ?, password = ?, updated_at = ? WHERE user_id = ?",
+      [dataJson, slug, vis, pw, stamp, req.user.sub]
+    );
   } else {
-    db.prepare(
-      "INSERT INTO portfolios (user_id, slug, data, visibility, password) VALUES (?, ?, ?, ?, ?)"
-    ).run(req.user.sub, slug, dataJson, vis, pw);
+    await sql.run(
+      "INSERT INTO portfolios (user_id, slug, data, visibility, password, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [req.user.sub, slug, dataJson, vis, pw, stamp, stamp]
+    );
   }
 
-  const row = db.prepare("SELECT * FROM portfolios WHERE user_id = ?").get(req.user.sub);
+  const row = await sql.get("SELECT * FROM portfolios WHERE user_id = ?", [req.user.sub]);
   res.json({ portfolio: { ...row, data: JSON.parse(row.data) } });
 });
 
 // Removes the user's published portfolio entirely (frees the slug, kills the
 // share link). Distinct from setting visibility to "private", which keeps the
 // row and the slug reserved.
-portfolioRouter.delete("/mine", requireAuth, (req, res) => {
-  db.prepare("DELETE FROM portfolios WHERE user_id = ?").run(req.user.sub);
+portfolioRouter.delete("/mine", requireAuth, async (req, res) => {
+  await sql.run("DELETE FROM portfolios WHERE user_id = ?", [req.user.sub]);
   res.status(204).end();
 });
 
@@ -81,8 +84,8 @@ portfolioRouter.delete("/mine", requireAuth, (req, res) => {
 // If password-protected, `data` is withheld entirely until /unlock succeeds, and if private,
 // `data` is never returned at all — the client must never receive portfolio contents before
 // the visibility/password rules actually allow it.
-portfolioRouter.get("/by-slug/:slug", (req, res) => {
-  const row = db.prepare("SELECT * FROM portfolios WHERE slug = ?").get(req.params.slug);
+portfolioRouter.get("/by-slug/:slug", async (req, res) => {
+  const row = await sql.get("SELECT * FROM portfolios WHERE slug = ?", [req.params.slug]);
   if (!row) return res.status(404).json({ error: "No portfolio found at this link." });
 
   // Private portfolios answer exactly like a nonexistent slug, so this
@@ -95,13 +98,13 @@ portfolioRouter.get("/by-slug/:slug", (req, res) => {
     return res.json({ portfolio: { slug: row.slug, visibility: "password", protected: true, views: row.views } });
   }
 
-  db.prepare("UPDATE portfolios SET views = views + 1 WHERE id = ?").run(row.id);
+  await sql.run("UPDATE portfolios SET views = views + 1 WHERE id = ?", [row.id]);
   res.json({ portfolio: { slug: row.slug, data: JSON.parse(row.data), visibility: "public", views: row.views + 1 } });
 });
 
 // Password check for a protected portfolio (keeps the password server-side)
 portfolioRouter.post("/by-slug/:slug/unlock", async (req, res) => {
-  const row = db.prepare("SELECT * FROM portfolios WHERE slug = ?").get(req.params.slug);
+  const row = await sql.get("SELECT * FROM portfolios WHERE slug = ?", [req.params.slug]);
   if (!row) return res.status(404).json({ error: "No portfolio found at this link." });
   if (row.visibility !== "password") return res.status(400).json({ error: "This portfolio isn't password-protected." });
 
@@ -109,6 +112,6 @@ portfolioRouter.post("/by-slug/:slug/unlock", async (req, res) => {
   const valid = !!password && !!row.password && (await verifyPassword(password, row.password));
   if (!valid) return res.status(401).json({ error: "Incorrect password." });
 
-  db.prepare("UPDATE portfolios SET views = views + 1 WHERE id = ?").run(row.id);
+  await sql.run("UPDATE portfolios SET views = views + 1 WHERE id = ?", [row.id]);
   res.json({ unlocked: true, data: JSON.parse(row.data) });
 });

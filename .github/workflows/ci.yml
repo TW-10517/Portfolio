@@ -29,6 +29,14 @@ jobs:
         env:
           JWT_SECRET: ci-only-secret-not-used-in-production
 
+      # The same suites again, against real PostgreSQL (PGlite compiles it to
+      # WASM, so there is no service to stand up). Without this the Postgres
+      # path is code nobody runs until someone deploys on it.
+      - name: Server tests against PostgreSQL
+        run: npm run test:pg
+        env:
+          JWT_SECRET: ci-only-secret-not-used-in-production
+
       - name: Production build
         run: npm run build
 

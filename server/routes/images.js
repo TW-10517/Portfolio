@@ -1,7 +1,7 @@
 import { Router } from "express";
 import crypto from "crypto";
 import express from "express";
-import { db } from "../db.js";
+import { sql, D, nowIso } from "../db.js";
 import { requireAuth } from "../auth.js";
 
 export const imageRouter = Router();
@@ -39,22 +39,22 @@ function sniff(buf) {
   return null;
 }
 
-function usedBytes(userId) {
-  const row = db
-    .prepare(
-      `SELECT COALESCE(SUM(b.size), 0) AS total
-         FROM image_owners o JOIN image_blobs b ON b.hash = o.hash
-        WHERE o.user_id = ?`
-    )
-    .get(userId);
-  return row.total;
+async function usedBytes(userId) {
+  const row = await sql.get(
+    `SELECT COALESCE(SUM(b.size), 0) AS total
+       FROM image_owners o JOIN image_blobs b ON b.hash = o.hash
+      WHERE o.user_id = ?`,
+    [userId]
+  );
+  // Postgres returns SUM as numeric, which the driver hands back as a string.
+  return Number(row.total);
 }
 
 imageRouter.post(
   "/",
   requireAuth,
   express.raw({ type: () => true, limit: MAX_IMAGE_BYTES }),
-  (req, res) => {
+  async (req, res) => {
     const bytes = req.body;
     if (!Buffer.isBuffer(bytes) || bytes.length === 0) {
       return res.status(400).json({ error: "Send the image as the raw request body." });
@@ -66,26 +66,32 @@ imageRouter.post(
     }
 
     const hash = crypto.createHash("sha256").update(bytes).digest("hex");
-    const existing = db.prepare("SELECT size FROM image_blobs WHERE hash = ?").get(hash);
+    const existing = await sql.get("SELECT size FROM image_blobs WHERE hash = ?", [hash]);
 
     // Re-uploading something already stored must not count against the quota
     // twice, and must not fail once the quota is full — otherwise re-saving an
     // unchanged portfolio would start erroring.
-    if (!existing && usedBytes(req.user.sub) + bytes.length > MAX_BYTES_PER_USER) {
+    if (!existing && (await usedBytes(req.user.sub)) + bytes.length > MAX_BYTES_PER_USER) {
       return res.status(413).json({ error: "You've used all your image storage. Remove some images first." });
     }
 
-    db.transaction(() => {
+    const stamp = nowIso();
+    await sql.tx(async () => {
       if (!existing) {
-        db.prepare("INSERT INTO image_blobs (hash, mime, bytes, size) VALUES (?, ?, ?, ?)").run(
+        await sql.run("INSERT INTO image_blobs (hash, mime, bytes, size, created_at) VALUES (?, ?, ?, ?, ?)", [
           hash,
           mime,
           bytes,
-          bytes.length
-        );
+          bytes.length,
+          stamp,
+        ]);
       }
-      db.prepare("INSERT OR IGNORE INTO image_owners (user_id, hash) VALUES (?, ?)").run(req.user.sub, hash);
-    })();
+      await sql.run(D.insertOrIgnore("image_owners", "user_id, hash, created_at", "?, ?, ?"), [
+        req.user.sub,
+        hash,
+        stamp,
+      ]);
+    });
 
     // Relative, not absolute. A portfolio saved against localhost and opened
     // in production has to keep working, and an absolute URL would bake the
@@ -94,11 +100,11 @@ imageRouter.post(
   }
 );
 
-imageRouter.get("/:file", (req, res) => {
+imageRouter.get("/:file", async (req, res) => {
   const hash = String(req.params.file).split(".")[0];
   if (!/^[0-9a-f]{64}$/.test(hash)) return res.status(404).json({ error: "Not found" });
 
-  const row = db.prepare("SELECT mime, bytes, size FROM image_blobs WHERE hash = ?").get(hash);
+  const row = await sql.get("SELECT mime, bytes, size FROM image_blobs WHERE hash = ?", [hash]);
   if (!row) return res.status(404).json({ error: "Not found" });
 
   res
@@ -116,6 +122,6 @@ imageRouter.get("/:file", (req, res) => {
     .send(row.bytes);
 });
 
-imageRouter.get("/", requireAuth, (req, res) => {
-  res.json({ used: usedBytes(req.user.sub), limit: MAX_BYTES_PER_USER });
+imageRouter.get("/", requireAuth, async (req, res) => {
+  res.json({ used: await usedBytes(req.user.sub), limit: MAX_BYTES_PER_USER });
 });
