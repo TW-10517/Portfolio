@@ -32,5 +32,12 @@ export function securityHeaders(req, res, next) {
     res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   }
 
+  // Nothing this server returns is a document that should be allowed to load
+  // anything. The API answers JSON, and locking it down costs nothing — the
+  // preview route sets its own policy below, since it genuinely is HTML.
+  if (!req.path.startsWith("/p/")) {
+    res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'; base-uri 'none'");
+  }
+
   next();
 }

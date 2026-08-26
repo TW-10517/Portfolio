@@ -63,10 +63,15 @@ describe("GET /p/:slug", () => {
     expect(missing.status).toBe(200);
     // Same status, same body apart from the slug in the redirect target —
     // otherwise this route becomes an oracle for which slugs exist.
-    // Supertest binds an ephemeral port, which lands in og:url; normalise the
-    // host along with the slug so only real differences show up.
+    // Supertest binds an ephemeral port, which lands in og:url, and the CSP
+    // nonce is fresh per response by design. Both are normalised along with
+    // the slug: neither carries any information about the portfolio, so only
+    // real differences show up.
     const normalise = (text, slug) =>
-      text.replace(new RegExp(slug, "g"), "X").replace(/127\.0\.0\.1:\d+/g, "HOST");
+      text
+        .replace(new RegExp(slug, "g"), "X")
+        .replace(/127\.0\.0\.1:\d+/g, "HOST")
+        .replace(/nonce="[^"]+"/g, 'nonce="N"');
     expect(normalise(missing.text, "no-such-portfolio-anywhere")).toBe(normalise(priv.text, "hidden-two"));
   });
 
@@ -76,5 +81,28 @@ describe("GET /p/:slug", () => {
     await request(app).get("/p/counted");
     const mine = await request(app).get("/api/portfolios/mine").set("Authorization", `Bearer ${token}`);
     expect(mine.body.portfolio.views).toBe(0);
+  });
+
+  it("locks the page down with a nonce rather than allowing inline script", async () => {
+    await publish({ slug: "csp-one" });
+    const res = await request(app).get("/p/csp-one");
+    const csp = res.headers["content-security-policy"];
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).not.toContain("unsafe-inline");
+
+    // The nonce in the header has to be the one on the script, or the redirect
+    // silently stops running for anyone whose browser enforces the policy.
+    const nonce = /'nonce-([^']+)'/.exec(csp)[1];
+    expect(res.text).toContain(`<script nonce="${nonce}">`);
+  });
+
+  it("uses a fresh nonce for every response", async () => {
+    // A reused nonce is the same as no nonce: anyone who has seen one page can
+    // write a script tag that the policy accepts.
+    await publish({ slug: "csp-two" });
+    const a = await request(app).get("/p/csp-two");
+    const b = await request(app).get("/p/csp-two");
+    expect(a.headers["content-security-policy"]).not.toBe(b.headers["content-security-policy"]);
   });
 });

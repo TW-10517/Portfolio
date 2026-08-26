@@ -97,3 +97,35 @@ describe("security headers", () => {
     expect(secure.headers["strict-transport-security"]).toContain("max-age=31536000");
   });
 });
+
+describe("brute force surfaces", () => {
+  it("limits guesses at a password-protected portfolio", async () => {
+    // This was the one auth surface with no limit at all: 60 guesses in a row
+    // were all accepted, so a protected portfolio could be opened at whatever
+    // rate the network allowed. It is a login by another name.
+    const email = `owner-${Date.now()}-${Math.random().toString(36).slice(2)}@example.com`;
+    const { body } = await request(app).post("/api/auth/register").send({ name: "O", email, password: "letmein1" });
+    const slug = `locked-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    await request(app)
+      .put("/api/portfolios/mine")
+      .set("Authorization", `Bearer ${body.token}`)
+      .send({ data: { profile: { name: "Secret" } }, slug, visibility: "password", password: "s3cretpass" });
+
+    const statuses = [];
+    for (let i = 0; i < 20; i += 1) {
+      const res = await request(app).post(`/api/portfolios/by-slug/${slug}/unlock`).send({ password: `guess${i}` });
+      statuses.push(res.status);
+    }
+    expect(statuses).toContain(429);
+    expect(statuses.filter((s) => s === 401).length).toBeLessThanOrEqual(12);
+  }, 120000);
+});
+
+describe("content security policy", () => {
+  it("tells the browser an API response can load nothing", async () => {
+    const res = await request(app).get("/api/health");
+    const csp = res.headers["content-security-policy"];
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain("frame-ancestors 'none'");
+  });
+});

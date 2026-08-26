@@ -194,7 +194,7 @@ Custom CSS from the Theme tab is passed through `utils/sanitizeCss.js` before be
 npm test
 ```
 
-372 tests across 41 files (Vitest, plus Supertest for the API and Testing Library for components):
+382 tests across 40 files (Vitest, plus Supertest for the API and Testing Library for components):
 
 - **API integration** — `server/routes/auth.integration.test.js`, `portfolio.integration.test.js` (real HTTP against the Express app, real SQLite)
 - **Auth units** — `server/auth.test.js` (hashing, JWT, validation rules)
@@ -209,7 +209,7 @@ npm test
 - **Email** — `server/mail.test.js` (routing, both body parts, failures that stay quiet), `server/mailSmtp.integration.test.js` (delivery to a real SMTP server)
 - **Images** — `server/routes/images.integration.test.js` (upload, sniffing, dedup, immutable serving), `server/imageGc.test.js` (deletion actually deletes), `imageUrl.test.js`, `inlineStoredImages.test.js`
 - **Languages** — `voices.test.js` (every phrase, every style, every language)
-- **Utils** — `slug.test.js`, `sanitizeCss.test.js`, `textMetrics.test.js`, `exportImport.test.js`
+- **Utils** — `slug.test.js`, `sanitizeCss.test.js`, `textMetrics.test.js`, `exportImport.test.js`, `dataUrl.test.js`
 
 Component suites opt into a DOM per file with a `// @vitest-environment jsdom`
 docblock; everything else runs in plain Node, so the fast majority of the suite
@@ -221,7 +221,7 @@ skips jsdom's startup cost.
 npm run test:e2e
 ```
 
-34 Playwright specs in `e2e/`, because almost every serious bug this project
+37 Playwright specs in `e2e/`, because almost every serious bug this project
 has had was invisible to unit tests: narration cut off mid-sentence, an export
 that claimed to have audio and didn't, a share modal that hid your own link
 when you reopened it, focus escaping a dialog, a scene duration field that
@@ -233,6 +233,7 @@ turned "30" into "3025".
 - `a11y.spec.js` (4) — axe-core over login, both editor modes, the portfolio
 - `editor.spec.js` (5) — tab navigation, adding and removing entries, autosave, a failed import that explains itself
 - `video.spec.js` (4) — script generation, a non-blank rendered frame, retiming a scene, playback
+- `csp.spec.js` (3) — the production Content-Security-Policy is served, is enforced, and doesn't break the app
 
 `playwright.config.js` starts both servers itself on ports 4001/5174 against
 `server/e2e.sqlite`, so a run never touches the dev database or spends the dev
@@ -542,15 +543,67 @@ the one outage it exists to catch. It also reports uptime and which backend is
 in use. Point any uptime monitor at it; successful checks aren't logged, so a
 per-minute ping doesn't bury everything else.
 
+## Hosting it
+
+Two things have to be hosted, and both fit inside free tiers.
+
+| | What it is | What it needs |
+|---|---|---|
+| Frontend | `npm run build` → `dist/`, static files | Any static host. Netlify, Cloudflare Pages, Vercel, GitHub Pages, or an nginx directory |
+| API | `server/`, one long-running Node process | Node **22 or newer**, TLS terminated in front of it, and either a persistent disk or a Postgres URL |
+
+**The frontend needs no rewrite rules.** Routing is hash-based
+(`/#/editor`), so every URL is really `/` and a plain static host serves it
+correctly with nothing configured. Copy `public/_headers` into place — the
+build already puts it in `dist/`, and Netlify and Cloudflare Pages read it
+as-is. On Vercel the same values go in `vercel.json` under `"headers"`; on
+nginx they are `add_header` lines. **Replace `YOUR-API-HOST` in it** with
+wherever your API lives, in both `connect-src` and `img-src`, or uploaded
+photos will not load and saves will not reach the server.
+
+**The API needs Node 22 or newer** — `better-sqlite3@13` requires it, and CI
+runs on 22 for that reason. It is a single process; nothing here needs a
+worker pool, a queue, or a second service. 256MB of memory is comfortable.
+
+**Storage is a choice, not a requirement.** On a host with a real disk, SQLite
+at `server/data.sqlite` is created on first boot and needs no setup at all. On
+a host with an ephemeral filesystem — which is most managed platforms, where
+the disk is wiped on every redeploy — set `DATABASE_URL` to a free Postgres
+(Supabase, Neon, Render) with `?sslmode=verify-full`. The schema is created
+automatically either way. See "Choosing a database" above for the tradeoff.
+
+**TLS comes from the host.** Every platform above terminates it for you; the
+app doesn't hold certificates. Once requests arrive over HTTPS the API starts
+sending HSTS on its own — it deliberately won't while you're on plain HTTP, so
+a dev server can't pin localhost to HTTPS in your browser.
+
+**What is *not* needed**, and is worth saying because it is what usually makes
+a project like this expensive to host: no GPU, no video rendering service, no
+object storage, no paid AI API, no managed queue, no CDN. The AI writes the
+script; the visitor's own browser encodes the video and downloads it, so the
+work that would need a render farm happens on the machine that asked for it.
+Uploaded images are content-addressed blobs in the same database as everything
+else. Ollama, if used, runs on the visitor's own machine, and Gemini only when
+someone supplies their own key.
+
+**Optional, and off unless configured:** SMTP for password-reset delivery
+(`MAIL_TRANSPORT=smtp` — otherwise links print to the API log, which is
+genuinely enough for an instance you run yourself), and `ERROR_WEBHOOK_URL` to
+push errors to Sentry, Slack, or your own endpoint.
+
 ## Deploying
 
-The frontend is a static build (`npm run build` → `dist/`) — deploy to Netlify, Vercel, or GitHub Pages with no rewrite rules, since routing is hash-based. The API needs a Node host and a writable disk for SQLite (or the Postgres swap described above). Before deploying, set in `.env`:
+Before deploying, set in `.env`:
 
 - `JWT_SECRET` — a long random string (**required**; there's an insecure dev fallback otherwise)
 - `CORS_ORIGIN` — your real frontend origin(s); the API rejects anything not listed
 - `VITE_API_URL` — where the browser should reach the API, if it isn't `localhost:4000`
 - `TRUST_PROXY` — **set this to `1` on any managed host.** See below; getting it wrong is a site-wide lockout in one direction and a bypassed rate limiter in the other
 - `FRONTEND_URL` — the base for reset/verification links, and where `/p/:slug` sends a human after a crawler has read its preview tags
+
+And one thing that isn't an environment variable: replace `YOUR-API-HOST`
+in `public/_headers` before building, or the Content-Security-Policy blocks
+the frontend from reaching its own API.
 
 (`legacy-static/` isn't part of the Vite build and would need deploying separately.)
 
@@ -627,6 +680,38 @@ controls.
 lives in process memory, so every restart handed out a fresh allowance and
 nothing was shared between workers. `server/RateLimitStore.js` keeps them
 in the database that is already the source of truth.
+
+**Guessing a portfolio password is rate limited.** A password-protected
+portfolio's unlock endpoint is a login by another name, and it was the one auth
+surface with no limit at all — an audit measured 60 consecutive guesses
+accepted and zero refused, so a protected portfolio could be opened at whatever
+rate the network allowed. It now has its own counter, tighter than the account
+login (10 per 15 minutes) because there is no account to lock out and no
+legitimate reason to try ten times.
+
+**Everything is served with a Content-Security-Policy.** API responses declare
+`default-src 'none'` — a JSON endpoint has no reason to be able to load
+anything. The share preview at `/p/:slug` is HTML, so it gets a per-response
+nonce instead: its one inline script carries a random nonce and the policy
+names only that, which means an injected `<script>` cannot run even if one ever
+got that far. The frontend's policy lives in `public/_headers` for the static
+host, and its `script-src 'self'` carries neither `'unsafe-inline'` nor
+`'unsafe-eval'` — that is the part actually standing between an injected string
+and code execution.
+
+A policy nobody has run the app under is a guess, and getting it wrong shows up
+as a blank page in production rather than as a warning. So `vite.config.js`
+parses the same `public/_headers` file into `preview.headers`, and the browser
+suite runs against `vite preview` — meaning **every e2e spec is also a CSP
+test**, and `e2e/csp.spec.js` additionally proves the policy is enforced rather
+than merely present by trying to inject a script and watching it get blocked.
+
+Doing that found a real bug: `ImageUpload` turned a data: URL into a Blob with
+`fetch(dataUrl)`, which `connect-src` governs. Under the policy it failed, and
+the upload path's own catch quietly kept the inline base64 copy instead — so
+every photo would have gone back to living inside the portfolio JSON, growing
+documents until they could no longer be saved, with nothing on screen to say
+so. `src/utils/dataUrl.js` decodes it directly now.
 
 **Dialogs trap focus.** `src/components/ui/Modal.jsx` moves focus into the
 panel on open, cycles Tab and Shift+Tab within it, closes on Escape, and

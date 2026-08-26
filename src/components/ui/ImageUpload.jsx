@@ -3,6 +3,7 @@ import { readImageFile } from "../../utils/exportImport.js";
 import { useAuthStore } from "../../store/useAuthStore.js";
 import { api, ApiError } from "../../utils/api.js";
 import { resolveImageUrl } from "../../utils/imageUrl.js";
+import { dataUrlToBlob } from "../../utils/dataUrl.js";
 import { notify } from "../../store/useNotices.js";
 
 export function ImageUpload({ value, onChange, label = "Image", round }) {
@@ -89,7 +90,7 @@ export function ImageUpload({ value, onChange, label = "Image", round }) {
 async function store(dataUrl, token) {
   if (!token || !dataUrl.startsWith("data:")) return { value: dataUrl, warning: "" };
   try {
-    const blob = await (await fetch(dataUrl)).blob();
+    const blob = dataUrlToBlob(dataUrl);
     const { url } = await api.uploadImage(token, blob);
     return { value: url, warning: "" };
   } catch (e) {

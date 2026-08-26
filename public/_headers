@@ -1,0 +1,40 @@
+# Security headers for the static frontend.
+#
+# The API sets its own; this file is for the host serving dist/. Netlify and
+# Cloudflare Pages read it as-is. On Vercel the same values go in vercel.json
+# under "headers"; on nginx they are add_header lines. The values are what
+# matter, not the file format.
+#
+# The rule block below has to stay contiguous — a blank line ends a path block
+# in this format, so an explanation sitting between two headers would silently
+# orphan everything after it. Hence the notes up here:
+#
+#   img-src https: — a portfolio may link a picture from anywhere the author
+#   chose, and blocking that would break their page rather than protect
+#   anyone. data: and blob: cover uploads mid-edit and the video canvas.
+#
+#   YOUR-API-HOST must be replaced with wherever your API lives, in both
+#   connect-src and img-src. Uploaded photos are served by the API, so a
+#   policy that only lists it as a fetch destination shows broken images.
+#   Over https the blanket `https:` already covers it; the placeholder is
+#   what makes an API on a plain-http host work too.
+#
+#   The rest of connect-src:
+#   http://localhost:11434 is Ollama, which runs on the visitor's own machine;
+#   drop it if you don't offer local models. generativelanguage is Gemini,
+#   used only when someone supplies their own key.
+#
+#   style-src 'unsafe-inline' is not optional here: the theme system sets
+#   inline style attributes for user-chosen colours and fonts, and a
+#   portfolio's custom CSS is injected as a <style> element. That CSS is
+#   sanitised server-side rather than trusted.
+#
+#   script-src has no 'unsafe-inline' and no 'unsafe-eval'. That is the part
+#   actually standing between an injected string and code execution.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https: https://YOUR-API-HOST; media-src 'self' blob:; connect-src 'self' https://YOUR-API-HOST https://generativelanguage.googleapis.com http://localhost:11434; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'

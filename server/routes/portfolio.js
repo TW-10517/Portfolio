@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { sql, nowIso } from "../db.js";
 import { syncOwnership } from "../imageGc.js";
+import { unlockLimiter } from "../rateLimit.js";
 import { validatePortfolioData } from "../validatePortfolio.js";
 import { requireAuth, hashPassword, verifyPassword } from "../auth.js";
 
@@ -113,7 +114,7 @@ portfolioRouter.get("/by-slug/:slug", async (req, res) => {
 });
 
 // Password check for a protected portfolio (keeps the password server-side)
-portfolioRouter.post("/by-slug/:slug/unlock", async (req, res) => {
+portfolioRouter.post("/by-slug/:slug/unlock", unlockLimiter, async (req, res) => {
   const row = await sql.get("SELECT * FROM portfolios WHERE slug = ?", [req.params.slug]);
   if (!row) return res.status(404).json({ error: "No portfolio found at this link." });
   if (row.visibility !== "password") return res.status(400).json({ error: "This portfolio isn't password-protected." });

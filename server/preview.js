@@ -81,7 +81,7 @@ export function previewMetadata(portfolio, origin = "") {
   };
 }
 
-export function buildPreviewHtml({ portfolio, slug, appUrl, canonicalUrl }) {
+export function buildPreviewHtml({ portfolio, slug, appUrl, canonicalUrl, nonce = "" }) {
   // An uploaded image lives on this server, so its absolute URL is this
   // server's own origin plus the stored path.
   let origin = "";
@@ -121,7 +121,7 @@ export function buildPreviewHtml({ portfolio, slug, appUrl, canonicalUrl }) {
     <meta name="twitter:title" content="${title}" />
     <meta name="twitter:description" content="${description}" />
     <meta http-equiv="refresh" content="0; url=${escapeHtml(target)}" />
-    <script>window.location.replace(${JSON.stringify(target)});</script>
+    <script${nonce ? ` nonce="${escapeHtml(nonce)}"` : ""}>window.location.replace(${JSON.stringify(target)});</script>
   </head>
   <body>
     <p>Taking you to <a href="${escapeHtml(target)}">this portfolio</a>…</p>

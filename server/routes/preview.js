@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { sql } from "../db.js";
+import crypto from "crypto";
 import { buildPreviewHtml } from "../preview.js";
 
 export const previewRouter = Router();
@@ -26,9 +27,21 @@ previewRouter.get("/:slug", async (req, res) => {
     ? { slug: row.slug, visibility: row.visibility, data: safeParse(row.data) }
     : null;
 
+  // The page carries one inline script — the redirect — so it needs a nonce
+  // rather than 'unsafe-inline'. Fresh per response, which is the only way a
+  // nonce means anything.
+  const nonce = crypto.randomBytes(16).toString("base64");
+
   res
     .status(200)
     .type("html")
+    .set(
+      "Content-Security-Policy",
+      // img-src allows remote pictures because og:image points at whatever the
+      // author uploaded or linked. Everything else is off: this document has
+      // no styles, no fetches and nothing to frame.
+      `default-src 'none'; img-src https: data:; script-src 'nonce-${nonce}'; frame-ancestors 'none'; base-uri 'none'`
+    )
     // Crawlers re-fetch on every unfurl and portfolios change; a short shared
     // cache keeps a link that gets pasted around from hammering the database
     // without pinning a stale name for long.
@@ -39,6 +52,7 @@ previewRouter.get("/:slug", async (req, res) => {
         slug: req.params.slug,
         appUrl: APP_URL,
         canonicalUrl: canonicalUrl(req),
+        nonce,
       })
     );
 });

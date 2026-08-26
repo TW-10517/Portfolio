@@ -36,6 +36,12 @@ function limiter(limit) {
 export const loginLimiter = limiter(20);
 export const registerLimiter = limiter(30);
 export const tokenLimiter = limiter(30);
+// A password-protected portfolio's unlock endpoint is a login by another name,
+// and it was the one auth surface with no limit at all — a protected portfolio
+// could be guessed at full speed. Tighter than the account login because there
+// is no account to lock out and no legitimate reason to try ten times.
+export const unlockLimiter = limiter(10);
+
 // Uploads are per-account rather than per-attack: a portfolio with a photo on
 // every project is a few dozen files, and this leaves room for redoing them.
 export const uploadLimiter = limiter(200);

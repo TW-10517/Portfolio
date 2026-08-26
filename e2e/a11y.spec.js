@@ -9,8 +9,17 @@ const AXE = fs.readFileSync(require.resolve("axe-core/axe.min.js"), "utf8");
 // Automated checks catch contrast, labelling and landmark problems. They can't
 // see keyboard behaviour, so the dialog focus trap is asserted separately
 // below and in src/components/ui/Modal.test.jsx.
+// Injected before the page's own scripts rather than appended as a <script>
+// element afterwards. The preview server sends the production CSP (see
+// vite.config.js), and `script-src 'self'` blocks an inline script tag —
+// correctly, since that is the whole point of it. An init script goes in
+// through the debugger protocol, so the test harness stays out of the way of
+// the policy it is meant to be testing under.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript({ content: AXE });
+});
+
 async function violations(page) {
-  await page.addScriptTag({ content: AXE });
   return page.evaluate(async () => {
     const res = await window.axe.run(document, { resultTypes: ["violations"] });
     return res.violations.map((v) => ({
