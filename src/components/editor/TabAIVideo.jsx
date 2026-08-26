@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { usePortfolioStore } from "../../store/usePortfolioStore.js";
+import { useVideoStore, DEFAULT_CONFIG } from "../../store/useVideoStore.js";
 import { Select, TextArea } from "../ui/Field.jsx";
 import { Button } from "../ui/Button.jsx";
 import { slugify } from "../../utils/slug.js";
-import { buildScenePlan, LENGTH_OPTIONS, AUDIENCE_OPTIONS, STYLE_OPTIONS, DEFAULT_SECTIONS, ALL_SECTIONS } from "../../services/video/sceneBuilder.js";
-import { writeNarration, rewriteScene, retimeScenePlan } from "../../services/video/aiWriter.js";
+import { LENGTH_OPTIONS, AUDIENCE_OPTIONS, STYLE_OPTIONS, ALL_SECTIONS } from "../../services/video/sceneBuilder.js";
+import { rewriteScene } from "../../services/video/aiWriter.js";
 import {
   getAIProvider,
   getGeminiApiKey,
@@ -14,7 +15,6 @@ import {
   setOllamaModel,
   getOllamaUrl,
   listOllamaModels,
-  isInstantProvider,
 } from "../../services/ai/index.js";
 import { getVoices, isTTSSupported, SPEED_RATES, cancelSpeech } from "../../services/video/tts.js";
 import { playScenePlan, drawFirstFrame, renderAtScene, sceneIndexAtPosition, sceneStartTime, CANVAS_SIZE } from "../../services/video/player.js";
@@ -45,17 +45,6 @@ const SECTION_LABELS = {
   achievements: "Achievements",
   testimonial: "Testimonial",
 };
-const DEFAULT_CONFIG = {
-  style: "professional",
-  audience: "general",
-  length: "standard",
-  language: "English",
-  speed: "normal",
-  sections: DEFAULT_SECTIONS,
-  customInstruction: "",
-  voiceURI: "",
-};
-
 const STYLE_ICONS = { professional: "🧑‍💼", creative: "🎨", minimal: "✏️", storytelling: "📖" };
 const SCENE_ICONS = {
   intro: "👋",
@@ -107,16 +96,26 @@ export function TabAIVideo() {
   const exportContainer = containerLabel(exportMimeType);
   const exportExtension = fileExtensionForMimeType(exportMimeType);
 
-  const [config, setConfig] = useState(DEFAULT_CONFIG);
+  // Generation state lives in a store, not here: this component unmounts
+  // whenever another editor tab is clicked, and taking a minute of written
+  // script down with it is what made every tab switch start from zero.
+  const config = useVideoStore((s) => s.config);
+  const setConfig = useVideoStore((s) => s.setConfig);
+  const status = useVideoStore((s) => s.status);
+  const error = useVideoStore((s) => s.error);
+  const setError = useVideoStore((s) => s.setError);
+  const genProgress = useVideoStore((s) => s.progress);
+  const scenePlan = useVideoStore((s) => s.scenePlan);
+  const setScenePlan = useVideoStore((s) => s.setScenePlan);
+  const seekIndex = useVideoStore((s) => s.seekIndex);
+  const setSeekIndex = useVideoStore((s) => s.setSeekIndex);
+  const syncScript = useVideoStore((s) => s.sync);
+  const markProviderReady = useVideoStore((s) => s.markProviderReady);
+
   const [voices, setVoices] = useState([]);
-  const [status, setStatus] = useState("idle"); // idle | generating | ready | error
-  const [error, setError] = useState("");
-  const [genProgress, setGenProgress] = useState(null);
-  const [scenePlan, setScenePlan] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeSceneId, setActiveSceneId] = useState(null);
   const [playProgress, setPlayProgress] = useState(0);
-  const [seekIndex, setSeekIndex] = useState(0); // scene Play resumes from when idle
   const [dragging, setDragging] = useState(false);
   const [dragSeconds, setDragSeconds] = useState(0);
   const [showCaptions, setShowCaptions] = useState(true);
@@ -157,11 +156,6 @@ export function TabAIVideo() {
   useEffect(() => {
     latestRef.current = { scenePlan, data };
   });
-
-  // regenerate() must keep a stable identity (it's a useEffect dependency),
-  // so it reads the current config through refs rather than closing over it.
-  const configRef = useRef(config);
-  const narrationOptionsRef = useRef(null);
 
   const setCanvasNode = useCallback((el) => {
     canvasRef.current = el;
@@ -209,19 +203,26 @@ export function TabAIVideo() {
   useEffect(() => {
     let cancelled = false;
     listOllamaModels(getOllamaUrl()).then((models) => {
-      if (cancelled) return;
-      setOllamaModels(models);
-      setOllamaChecked(true);
+      // Which model to use is a setting for the machine, not for this mount,
+      // so it is decided even if the tab has already been clicked away from —
+      // and the store is waiting on the answer before it writes anything.
       const saved = getOllamaModel();
+      let chosen = saved;
       if (saved && !models.includes(saved)) {
         // The model was uninstalled since last time — fall back rather than
         // failing every scene against a model that no longer exists.
+        chosen = "";
         setOllamaModel("");
-        setOllamaModelState("");
       } else if (!saved && models.length) {
-        setOllamaModel(models[0]);
-        setOllamaModelState(models[0]);
+        chosen = models[0];
+        setOllamaModel(chosen);
       }
+      if (!cancelled) {
+        setOllamaModels(models);
+        setOllamaChecked(true);
+        setOllamaModelState(chosen);
+      }
+      markProviderReady();
     });
     return () => {
       cancelled = true;
@@ -249,67 +250,15 @@ export function TabAIVideo() {
     language: config.language,
     customInstruction: config.customInstruction,
   });
-  configRef.current = config;
-  narrationOptionsRef.current = narrationOptions;
 
-  // The Speed control changes how long the narration actually takes to
-  // speak, so every scene has to be re-timed to match — otherwise Slow gets
-  // clipped mid-sentence and Fast ends each scene in silence. Re-timing is
-  // pure arithmetic on the existing script, so it needs no AI call and is
-  // kept separate from the regeneration path below.
+  // Playback belongs to this component — it owns the canvas and the speech
+  // synthesiser — so a rebuild starting anywhere has to stop it from here.
   useEffect(() => {
-    setScenePlan((plan) => (plan ? retimeScenePlan(plan, SPEED_RATES[config.speed]) : plan));
-  }, [config.speed]);
-
-  // Only these settings change what the script actually SAYS. Speed and voice
-  // are deliberately excluded — they alter delivery, not wording, so touching
-  // them must not throw away a script (or a user's hand-edits to it).
-  const scriptSignature = JSON.stringify({
-    audience: config.audience,
-    style: config.style,
-    length: config.length,
-    language: config.language,
-    sections: config.sections,
-    customInstruction: config.customInstruction,
-  });
-
-  // Every regeneration gets a ticket; only the newest one is allowed to land.
-  // Without this, a fast sequence of edits can resolve out of order and leave
-  // the preview showing the script for a setting the user already moved off.
-  const genTicketRef = useRef(0);
-  const genAbortRef = useRef(null);
-
-  const regenerate = useCallback(async () => {
-    const ticket = ++genTicketRef.current;
-    genAbortRef.current?.abort();
-    const genController = new AbortController();
-    genAbortRef.current = genController;
+    if (status !== "generating") return;
     abortRef.current?.abort();
     cancelSpeech();
-    setStatus("generating");
-    setError("");
     setExportNote("");
-    setGenProgress(null);
-    try {
-      const plan = buildScenePlan(latestRef.current.data, configRef.current);
-      if (!plan.scenes.length) throw new Error("Add some portfolio content first — there's nothing to build a video from yet.");
-      const provider = getAIProvider("auto");
-      const narrated = await writeNarration(plan, provider, {
-        ...narrationOptionsRef.current(),
-        signal: genController.signal,
-        onProgress: (p) => genTicketRef.current === ticket && setGenProgress(p),
-      });
-      if (genTicketRef.current !== ticket) return;
-      setScenePlan(narrated);
-      setSeekIndex(0);
-      setStatus("ready");
-    } catch (e) {
-      // A superseded rebuild is expected, not a failure worth showing.
-      if (e?.name === "AbortError" || genTicketRef.current !== ticket) return;
-      setStatus("error");
-      setError(e.message || "Something went wrong generating your video.");
-    }
-  }, []);
+  }, [status]);
 
   // A finished rebuild has to be painted onto the canvas. The ref callback
   // only fires when the element itself mounts, so without this the player
@@ -323,19 +272,14 @@ export function TabAIVideo() {
 
   // Live rebuild: the script re-writes itself as settings change, so the
   // preview above always matches the controls below without a Generate step.
-  // The debounce is much longer for a cloud provider than for the offline
-  // writer, because each cloud rebuild spends the user's free API quota
-  // while the local one is instant and costs nothing.
-  const instantProvider = isInstantProvider(getAIProvider("auto"));
+  // Mounting is not itself a reason to rewrite anything — sync() compares what
+  // is wanted against what is already written or being written, so arriving
+  // back on this tab mid-run joins the run in progress instead of starting a
+  // second one. providerName is a dependency because switching between two
+  // local models is as much a script change as a setting change.
   useEffect(() => {
-    const delay = scenePlan === null ? 0 : instantProvider ? 350 : 2000;
-    const timer = setTimeout(regenerate, delay);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    // providerName is in the deps so switching between two local models (or
-    // to/from the cloud one) also rewrites the script — the writer changing
-    // is just as much a script change as a setting changing.
-  }, [scriptSignature, instantProvider, providerName, regenerate]);
+    syncScript();
+  }, [config, providerName, syncScript]);
 
   const handleRegenerateScene = async (sceneId) => {
     setRegeneratingId(sceneId);

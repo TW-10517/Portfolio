@@ -65,4 +65,30 @@ test.describe("AI video studio", () => {
     await page.locator('button[title="Stop"]').first().click();
     await expect(page.locator('button[title="Play"]').first()).toBeVisible();
   });
+
+  test("the script survives leaving the tab and coming back", async ({ page }) => {
+    // The studio used to live entirely in component state, so clicking any
+    // other editor tab unmounted it and threw the script away — including a
+    // run halfway through, which then restarted from zero. A hand-edit is the
+    // sharpest way to see it: regenerating replaces the text, so if the edit
+    // is still there, nothing was rewritten.
+    await register(page);
+    await page.click("text=🎬 AI Video");
+    await expect(page.locator("text=/scripted via/")).toBeVisible({ timeout: SCRIPT_READY });
+
+    const firstScene = page.locator('textarea[aria-label^="Narration for scene 1"]');
+    await expect(firstScene).toBeVisible();
+    await firstScene.fill("A line only a human would write.");
+
+    await page.click("text=Profile");
+    await expect(page.locator('textarea[aria-label^="Narration for scene 1"]')).toHaveCount(0);
+
+    await page.click("text=🎬 AI Video");
+    await expect(page.locator('textarea[aria-label^="Narration for scene 1"]')).toHaveValue(
+      "A line only a human would write."
+    );
+    // And it is usable immediately, rather than sitting on the pre-script
+    // teaser while everything is written again.
+    await expect(page.locator("text=/scripted via/")).toBeVisible({ timeout: 5_000 });
+  });
 });

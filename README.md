@@ -99,13 +99,41 @@ because a cloud API is happy with several in flight; Ollama 2, because a model
 on your own GPU doesn't really overlap but one request tokenising while another
 runs does help; the offline writer 1, since there is no I/O to overlap.
 
+The remembered scripts are **kept in `localStorage`**, so they survive a
+reload — in memory alone the cache only ever helped within a single visit, and
+refreshing the page meant writing every scene again for text the machine had
+already produced word for word. A byte budget rather than an entry count
+decides what stays, since a skills scene's key is short and a bio's is not,
+and it is cleared on sign-out along with the draft.
+
 Measured against Ollama running `qwen2.5:3b` locally, seven scenes:
 
-| | |
-|---|---|
-| A new combination | ~20–36s — the model's speed, not the app's |
-| A combination already seen | 0 model calls |
-| Concurrency 2 vs one-at-a-time | 19.8s vs 23.8s (1.20x) |
+| | Before | After |
+|---|---|---|
+| Opening the studio | ~1s of offline script, then ~28s rewriting it | 19.7s, written once |
+| Leaving the tab and coming back | started again from zero | 465ms |
+| After a page reload | 27.7s | 5.2s |
+| A combination already seen | 0 model calls | 0 model calls |
+| Concurrency 2 vs one-at-a-time | 19.8s vs 23.8s (1.20x) | unchanged |
+
+Two of those were the same bug seen from different angles: **the script lived
+in React state**, so the component unmounting took it with it. Clicking any
+other editor tab threw away the scenes already written — twenty-five seconds in
+was twenty-five seconds wasted — and coming back started from nothing, because
+there was no background for the work to run in. `src/store/useVideoStore.js`
+holds it now, and `sync()` decides whether anything actually needs writing, so
+mounting is no longer by itself a reason to rewrite.
+
+The third was **writing the whole script twice**. The app looks for a local
+model on mount and only falls back to the offline writer if there is none, but
+generation didn't wait for that answer: it wrote everything offline
+immediately, then wrote it all again the moment the probe landed. That is a
+wasted script and then the slow pass — and the user watched the text change
+under them while reading it. The probe is capped at 2.5 seconds and usually
+answers in tens of milliseconds, so waiting for it is close to free.
+
+The remaining 5.2s after a reload is one scene: a scene the guard rejects falls
+back to the offline writer, and a fallback is deliberately never cached.
 
 Concurrency was never going to be the win: the model runs on your own
 hardware, so requests don't genuinely overlap and only setup and tokenising
@@ -194,7 +222,7 @@ Custom CSS from the Theme tab is passed through `utils/sanitizeCss.js` before be
 npm test
 ```
 
-382 tests across 40 files (Vitest, plus Supertest for the API and Testing Library for components):
+398 tests across 42 files (Vitest, plus Supertest for the API and Testing Library for components):
 
 - **API integration** — `server/routes/auth.integration.test.js`, `portfolio.integration.test.js` (real HTTP against the Express app, real SQLite)
 - **Auth units** — `server/auth.test.js` (hashing, JWT, validation rules)
@@ -210,6 +238,7 @@ npm test
 - **Images** — `server/routes/images.integration.test.js` (upload, sniffing, dedup, immutable serving), `server/imageGc.test.js` (deletion actually deletes), `imageUrl.test.js`, `inlineStoredImages.test.js`
 - **Languages** — `voices.test.js` (every phrase, every style, every language)
 - **Utils** — `slug.test.js`, `sanitizeCss.test.js`, `textMetrics.test.js`, `exportImport.test.js`, `dataUrl.test.js`
+- **Video studio state** — `useVideoStore.test.js` (a remount joins the run in progress instead of starting a second one; speed and voice never cost a model call), `scriptCache.test.js` (what survives a reload, a full quota, and a browser that refuses to store anything)
 
 Component suites opt into a DOM per file with a `// @vitest-environment jsdom`
 docblock; everything else runs in plain Node, so the fast majority of the suite
@@ -221,7 +250,7 @@ skips jsdom's startup cost.
 npm run test:e2e
 ```
 
-37 Playwright specs in `e2e/`, because almost every serious bug this project
+38 Playwright specs in `e2e/`, because almost every serious bug this project
 has had was invisible to unit tests: narration cut off mid-sentence, an export
 that claimed to have audio and didn't, a share modal that hid your own link
 when you reopened it, focus escaping a dialog, a scene duration field that
@@ -232,7 +261,7 @@ turned "30" into "3025".
 - `sync.spec.js` (4) — edits surviving a reload and reaching a second browser context
 - `a11y.spec.js` (4) — axe-core over login, both editor modes, the portfolio
 - `editor.spec.js` (5) — tab navigation, adding and removing entries, autosave, a failed import that explains itself
-- `video.spec.js` (4) — script generation, a non-blank rendered frame, retiming a scene, playback
+- `video.spec.js` (5) — script generation, a non-blank rendered frame, retiming a scene, playback, a script that survives a tab switch
 - `csp.spec.js` (3) — the production Content-Security-Policy is served, is enforced, and doesn't break the app
 
 `playwright.config.js` starts both servers itself on ports 4001/5174 against
@@ -486,6 +515,7 @@ mobile data, which is what "how fast is it" ought to mean.
 | Sign up → editor usable | 4,627ms | ~2,400ms |
 | Tab switch, script time (x12) | 219–242ms | 95–136ms |
 | Third-party requests on first load | 6 | 0 |
+| AI Video: leaving the tab and returning | restarted from zero | 465ms |
 
 Four things were costing that, found by reading the request waterfall rather
 than by guessing:

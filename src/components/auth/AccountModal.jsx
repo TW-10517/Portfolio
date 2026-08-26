@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../store/useAuthStore.js";
 import { usePortfolioStore } from "../../store/usePortfolioStore.js";
+import { useVideoStore } from "../../store/useVideoStore.js";
 import { api, ApiError } from "../../utils/api.js";
 import { Modal } from "../ui/Modal.jsx";
 import { Button } from "../ui/Button.jsx";
@@ -47,6 +48,7 @@ export function AccountModal({ open, onClose }) {
   const signOutAndRedirect = async () => {
     await logout();
     clearLocalDraft();
+    useVideoStore.getState().reset();
     onClose();
     navigate("/login");
   };

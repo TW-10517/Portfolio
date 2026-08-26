@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { usePortfolioStore } from "../store/usePortfolioStore.js";
+import { useVideoStore } from "../store/useVideoStore.js";
 import { useAuthStore } from "../store/useAuthStore.js";
 import { downloadJson, readJsonFile, inlineStoredImages } from "../utils/exportImport.js";
 import { resolveImageUrl } from "../utils/imageUrl.js";
@@ -205,6 +206,10 @@ export function EditorPage() {
               onClick={() => {
                 logout();
                 clearLocalDraft();
+                // The AI Video studio outlives this component on purpose, so it
+                // has to be told about a sign-out or the next person to use
+                // this browser arrives at someone else's script.
+                useVideoStore.getState().reset();
                 navigate("/login");
               }}
               className="text-xs text-slate-400 hover:text-red-400"
