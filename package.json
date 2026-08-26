@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "dev:server": "node server/index.js",
+    "start": "node server/index.js",
     "dev:all": "concurrently -n web,api -c cyan,magenta \"npm:dev\" \"npm:dev:server\"",
     "build": "vite build",
     "preview": "vite preview",

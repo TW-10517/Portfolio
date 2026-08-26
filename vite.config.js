@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
@@ -12,6 +13,48 @@ import react from "@vitejs/plugin-react";
 // Deliberately not applied to the dev server: HMR injects inline script, so
 // `script-src 'self'` would break the thing developers use all day, and
 // weakening the policy to accommodate that would stop it testing anything.
+const API_HOST_PLACEHOLDER = "https://YOUR-API-HOST";
+
+// The API lives somewhere different in every deployment, so `public/_headers`
+// ships a placeholder. Leaving it for a human to replace by hand is a step that
+// gets forgotten exactly once, and the symptom is the deployed frontend being
+// unable to reach its own API — so it is resolved from VITE_API_URL, which the
+// build already needs for the same reason.
+function withApiHost(text) {
+  const api = process.env.VITE_API_URL;
+  if (!api) return text.replaceAll(` ${API_HOST_PLACEHOLDER}`, "");
+  return text.replaceAll(API_HOST_PLACEHOLDER, new URL(api, "http://localhost").origin);
+}
+
+// Rewrites the copy Vite emits into dist/, so what the static host serves has a
+// real host in it rather than the placeholder.
+function resolveApiHostInHeaders() {
+  let outDir = "dist";
+  return {
+    name: "resolve-api-host-in-headers",
+    apply: "build",
+    configResolved(config) {
+      outDir = resolve(config.root, config.build.outDir);
+    },
+    closeBundle() {
+      const emitted = resolve(outDir, "_headers");
+      if (!existsSync(emitted)) return;
+      const text = readFileSync(emitted, "utf8");
+      writeFileSync(emitted, withApiHost(text));
+      if (!process.env.VITE_API_URL) {
+        // Not fatal: a build for a frontend served from the same origin as the
+        // API genuinely needs no entry. Said out loud because the other reason
+        // to see this is forgetting to set it, and that ships a policy that
+        // blocks every API call the app makes.
+        this.warn(
+          "VITE_API_URL is unset, so dist/_headers names no API host. " +
+            "The frontend can only reach an API on its own origin."
+        );
+      }
+    },
+  };
+}
+
 function headersFromFile() {
   const file = fileURLToPath(new URL("./public/_headers", import.meta.url));
   const out = {};
@@ -28,16 +71,8 @@ function headersFromFile() {
     if (at > 0) out[line.slice(0, at).trim()] = line.slice(at + 1).trim();
   }
 
-  // The API lives somewhere different in every deployment, so the file ships a
-  // placeholder. Here it is whatever the build was pointed at.
   const csp = "Content-Security-Policy";
-  if (out[csp]) {
-    const api = process.env.VITE_API_URL;
-    const origin = api ? new URL(api, "http://localhost").origin : "";
-    out[csp] = origin
-      ? out[csp].replaceAll("https://YOUR-API-HOST", origin)
-      : out[csp].replaceAll(" https://YOUR-API-HOST", "");
-  }
+  if (out[csp]) out[csp] = withApiHost(out[csp]);
 
   // Sent over a plain-HTTP preview it would pin localhost to HTTPS in the
   // developer's own browser, which is genuinely annoying to undo.
@@ -46,7 +81,7 @@ function headersFromFile() {
 }
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), resolveApiHostInHeaders()],
   preview: { headers: headersFromFile() },
   test: {
     // Node is the right default: most suites test pure functions or drive the

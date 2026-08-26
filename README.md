@@ -557,9 +557,10 @@ Two things have to be hosted, and both fit inside free tiers.
 correctly with nothing configured. Copy `public/_headers` into place — the
 build already puts it in `dist/`, and Netlify and Cloudflare Pages read it
 as-is. On Vercel the same values go in `vercel.json` under `"headers"`; on
-nginx they are `add_header` lines. **Replace `YOUR-API-HOST` in it** with
-wherever your API lives, in both `connect-src` and `img-src`, or uploaded
-photos will not load and saves will not reach the server.
+nginx they are `add_header` lines. The `YOUR-API-HOST` placeholder in it is
+resolved from `VITE_API_URL` during the build, so the copy in `dist/` names
+your real API — nothing to edit by hand, and the build says so out loud if
+`VITE_API_URL` is unset.
 
 **The API needs Node 22 or newer** — `better-sqlite3@13` requires it, and CI
 runs on 22 for that reason. It is a single process; nothing here needs a
@@ -601,9 +602,9 @@ Before deploying, set in `.env`:
 - `TRUST_PROXY` — **set this to `1` on any managed host.** See below; getting it wrong is a site-wide lockout in one direction and a bypassed rate limiter in the other
 - `FRONTEND_URL` — the base for reset/verification links, and where `/p/:slug` sends a human after a crawler has read its preview tags
 
-And one thing that isn't an environment variable: replace `YOUR-API-HOST`
-in `public/_headers` before building, or the Content-Security-Policy blocks
-the frontend from reaching its own API.
+`VITE_API_URL` does double duty: it is baked into the bundle *and* substituted
+into the Content-Security-Policy in `dist/_headers`. Building without it
+produces a policy that lets the frontend reach an API only on its own origin.
 
 (`legacy-static/` isn't part of the Vite build and would need deploying separately.)
 

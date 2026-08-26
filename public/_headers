@@ -13,11 +13,12 @@
 #   chose, and blocking that would break their page rather than protect
 #   anyone. data: and blob: cover uploads mid-edit and the video canvas.
 #
-#   YOUR-API-HOST must be replaced with wherever your API lives, in both
-#   connect-src and img-src. Uploaded photos are served by the API, so a
-#   policy that only lists it as a fetch destination shows broken images.
-#   Over https the blanket `https:` already covers it; the placeholder is
-#   what makes an API on a plain-http host work too.
+#   YOUR-API-HOST is resolved at build time from VITE_API_URL, in both
+#   connect-src and img-src, and the copy in dist/ is the resolved one — this
+#   is the source, not what ships. Both are needed: uploaded photos are served
+#   by the API, so a policy naming it only as a fetch destination loads the
+#   page and then shows broken images. Over https the blanket `https:` already
+#   covers img-src; the placeholder is what makes a plain-http API work too.
 #
 #   The rest of connect-src:
 #   http://localhost:11434 is Ollama, which runs on the visitor's own machine;
