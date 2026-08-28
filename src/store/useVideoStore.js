@@ -160,6 +160,16 @@ export const useVideoStore = create((set, get) => ({
         ...narrationOptionsFor(config),
         signal,
         onProgress: (p) => ticket === mine && set({ progress: p }),
+        // Scenes go on screen as they are written rather than all at once at
+        // the end. Each one of these is a complete, playable, shorter video —
+        // see the prefix reasoning in aiWriter.js — so the studio can show it
+        // and let the user watch it while the rest is still being written.
+        onPartial: (partial) => {
+          if (ticket !== mine) return;
+          // The plan can only grow, but a rebuild starts it short again, and
+          // seeking past the end renders nothing.
+          set((s) => ({ scenePlan: partial, seekIndex: Math.min(s.seekIndex, partial.scenes.length - 1) }));
+        },
       });
       if (ticket !== mine) return;
       writing = null;

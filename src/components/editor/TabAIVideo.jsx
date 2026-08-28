@@ -484,6 +484,12 @@ export function TabAIVideo() {
     : sceneStartTime(scenePlan, seekIndex);
 
   const isBusy = status === "generating";
+  // A partial plan is a real video that happens to be short: the scenes
+  // written so far, in order. It can be watched and scrubbed; it just must not
+  // be exported, because the file would silently be missing its ending.
+  const partial = !!scenePlan?.partial;
+  const scenesReady = scenePlan?.scenes.length || 0;
+  const scenesExpected = genProgress?.total || scenesReady;
   const providerLabel = scenePlan?.scenes?.[0]?.providerName || providerName;
 
   return (
@@ -525,12 +531,24 @@ export function TabAIVideo() {
                   LIVE PREVIEW
                 </span>
               )}
+              {/* Blurring the whole canvas once there is something to watch
+                  would hide the very thing that just became watchable. */}
+              {isBusy && partial && (
+                <span className="px-2.5 py-1 rounded-full bg-slate-950/70 backdrop-blur text-[10px] font-semibold tracking-wide text-slate-300 border border-slate-700 flex items-center gap-1.5">
+                  <motion.span
+                    animate={{ rotate: 360 }}
+                    transition={{ repeat: Infinity, duration: 1.1, ease: "linear" }}
+                    className="w-2.5 h-2.5 rounded-full border border-cyan-400 border-t-transparent"
+                  />
+                  {scenesReady}/{scenesExpected}
+                </span>
+              )}
             </div>
 
             {/* Kept as an overlay on the previous frame rather than blanking
                 the canvas, so rapid edits don't flash black between rebuilds. */}
             <AnimatePresence>
-              {isBusy && (
+              {isBusy && !partial && (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -618,9 +636,9 @@ export function TabAIVideo() {
             <Button
               size="sm"
               onClick={handleExport}
-              disabled={exporting || isPlaying || !scenePlan}
+              disabled={exporting || isPlaying || !scenePlan || partial}
               className="shrink-0"
-              title={`Download this video as a .${exportExtension} file`}
+              title={partial ? "Ready once the whole script is written" : `Download this video as a .${exportExtension} file`}
             >
               {exporting
                 ? `Exporting… ${exportProgress ? `${exportProgress.index}/${exportProgress.total}` : ""}`
@@ -630,7 +648,11 @@ export function TabAIVideo() {
 
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <p className="text-[11px] text-slate-400">
-              {scenePlan ? `~${scenePlan.totalSeconds}s · ${scenePlan.scenes.length} scenes · scripted via ${providerLabel}` : "Preparing your video…"}
+              {!scenePlan
+                ? "Preparing your video…"
+                : partial
+                  ? `${scenesReady} of ${scenesExpected} scenes ready — playable now, still writing the rest`
+                  : `~${scenePlan.totalSeconds}s · ${scenePlan.scenes.length} scenes · scripted via ${providerLabel}`}
             </p>
             {error && <p className="text-[11px] text-red-400">{error}</p>}
             {exportNote && <p className="text-[11px] text-cyan-400">{exportNote}</p>}
@@ -767,7 +789,11 @@ export function TabAIVideo() {
               <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
                 Scenes {scenePlan ? `(${scenePlan.scenes.length})` : ""}
               </h3>
-              <p className="text-[11px] text-slate-600">Edits here survive Speed and Voice changes, but a setting above rewrites the script.</p>
+              <p className="text-[11px] text-slate-600">
+                {partial
+                  ? "Editable once the whole script is written."
+                  : "Edits here survive Speed and Voice changes, but a setting above rewrites the script."}
+              </p>
             </div>
             <div className="grid sm:grid-cols-2 gap-2.5">
               {scenePlan?.scenes.map((scene, index) => (
@@ -792,18 +818,21 @@ export function TabAIVideo() {
                       <span>{SCENE_ICONS[scene.type]}</span> {scene.title}
                     </button>
                     <div className="flex items-center gap-0.5">
-                      <button type="button" onClick={() => moveScene(index, -1)} disabled={index === 0} className="text-slate-400 hover:text-white disabled:opacity-30 text-xs w-5 h-5">↑</button>
-                      <button type="button" onClick={() => moveScene(index, 1)} disabled={index === scenePlan.scenes.length - 1} className="text-slate-400 hover:text-white disabled:opacity-30 text-xs w-5 h-5">↓</button>
+                      {/* Every control that changes the plan is off while the
+                          plan is still growing: the next prefix replaces the
+                          whole thing, so an edit made now would vanish. */}
+                      <button type="button" onClick={() => moveScene(index, -1)} disabled={partial || index === 0} className="text-slate-400 hover:text-white disabled:opacity-30 text-xs w-5 h-5">↑</button>
+                      <button type="button" onClick={() => moveScene(index, 1)} disabled={partial || index === scenePlan.scenes.length - 1} className="text-slate-400 hover:text-white disabled:opacity-30 text-xs w-5 h-5">↓</button>
                       <button
                         type="button"
                         onClick={() => handleRegenerateScene(scene.id)}
-                        disabled={regeneratingId === scene.id}
-                        className="text-slate-400 hover:text-cyan-400 text-xs w-5 h-5"
+                        disabled={partial || regeneratingId === scene.id}
+                        className="text-slate-400 hover:text-cyan-400 disabled:opacity-30 text-xs w-5 h-5"
                         title="Rewrite just this scene"
                       >
                         {regeneratingId === scene.id ? "…" : "✨"}
                       </button>
-                      <button type="button" onClick={() => removeScene(scene.id)} className="text-slate-400 hover:text-red-400 text-xs w-5 h-5">✕</button>
+                      <button type="button" onClick={() => removeScene(scene.id)} disabled={partial} className="text-slate-400 hover:text-red-400 disabled:opacity-30 text-xs w-5 h-5">✕</button>
                     </div>
                   </div>
                   <TextArea
@@ -811,7 +840,8 @@ export function TabAIVideo() {
                     rows={2}
                     value={scene.text}
                     onChange={(e) => updateScene(scene.id, { text: e.target.value })}
-                    className="text-xs"
+                    disabled={partial}
+                    className="text-xs disabled:opacity-60"
                   />
                   <div className="flex items-center gap-2 mt-2">
                     <label htmlFor={`scene-duration-${scene.id}`} className="text-[11px] text-slate-400">
@@ -823,6 +853,7 @@ export function TabAIVideo() {
                       min={3}
                       max={40}
                       value={durationDraft[scene.id] ?? scene.duration}
+                      disabled={partial}
                       onChange={(e) => {
                         // The old handler fell back to the current duration
                         // whenever Number(value) was falsy, so clearing the

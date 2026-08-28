@@ -52,7 +52,7 @@ Validation rules are enforced twice — client-side in `LoginPage.jsx`/`Register
 
 **Portfolios** (`/api/portfolios`) — `GET/PUT/DELETE /mine` (auth required), plus public `GET /by-slug/:slug` and `POST /by-slug/:slug/unlock`. Password gating is enforced server-side: the password is never sent to the client for a protected portfolio, only the content after a correct `/unlock` call.
 
-> **No email provider is wired up** — by design, so the app never requires connecting a third-party mail service. Password-reset and verification links are printed to the API server's console instead (`deliverLink()` in `server/routes/auth.js`). Copy the link from the terminal to complete either flow locally, and swap in a real provider there before relying on it in production.
+> **Email is configuration, not code.** `MAIL_TRANSPORT=console` (the default) prints password-reset and verification links to the API server's log — copy the link from the terminal to complete either flow locally, and no third-party mail account is ever required. `MAIL_TRANSPORT=smtp` sends them for real over plain SMTP, so any provider's free tier or your own mail server works. See "Email" below.
 
 **SQLite or Postgres — `DATABASE_URL` decides.** A path (or nothing) gets SQLite; a `postgres://` URL gets PostgreSQL. Nothing else changes and the schema is created on first boot either way. See "Choosing a database" below. `JWT_SECRET` must be set to a real secret in production; the code falls back to a well-known insecure default if unset.
 
@@ -110,11 +110,25 @@ Measured against Ollama running `qwen2.5:3b` locally, seven scenes:
 
 | | Before | After |
 |---|---|---|
-| Opening the studio | ~1s of offline script, then ~28s rewriting it | 19.7s, written once |
+| Opening the studio, first scene watchable | 19.7s — nothing was shown until all seven were done | 3.6s |
+| Opening the studio, whole script | ~1s of offline script, then ~28s rewriting it | 18.3s, written once |
 | Leaving the tab and coming back | started again from zero | 465ms |
 | After a page reload | 27.7s | 5.2s |
 | A combination already seen | 0 model calls | 0 model calls |
 | Concurrency 2 vs one-at-a-time | 19.8s vs 23.8s (1.20x) | unchanged |
+
+Scenes go on screen **as they are written**, not all at once at the end. The
+studio used to hold everything back until the last scene was done, which meant
+staring at a spinner for most of a minute while a perfectly good opening scene
+sat finished in memory. `writeNarration` now hands over a growing *prefix* —
+scenes one through *n*, in order — and each one is a real, shorter, playable
+video, so the preview, timeline and scene list all work on it unchanged.
+
+A prefix specifically, and not each scene the moment it lands: scenes are
+written concurrently, so scene four can be ready while scene two is not. A
+scene list with holes in it reads as a bug, and a video that cannot be played
+from the start is not a video. Export is the one thing held back until the
+script is whole — the file would otherwise be silently missing its ending.
 
 Two of those were the same bug seen from different angles: **the script lived
 in React state**, so the component unmounting took it with it. Clicking any
@@ -222,7 +236,7 @@ Custom CSS from the Theme tab is passed through `utils/sanitizeCss.js` before be
 npm test
 ```
 
-398 tests across 42 files (Vitest, plus Supertest for the API and Testing Library for components):
+401 tests across 42 files (Vitest, plus Supertest for the API and Testing Library for components):
 
 - **API integration** — `server/routes/auth.integration.test.js`, `portfolio.integration.test.js` (real HTTP against the Express app, real SQLite)
 - **Auth units** — `server/auth.test.js` (hashing, JWT, validation rules)
@@ -238,7 +252,7 @@ npm test
 - **Images** — `server/routes/images.integration.test.js` (upload, sniffing, dedup, immutable serving), `server/imageGc.test.js` (deletion actually deletes), `imageUrl.test.js`, `inlineStoredImages.test.js`
 - **Languages** — `voices.test.js` (every phrase, every style, every language)
 - **Utils** — `slug.test.js`, `sanitizeCss.test.js`, `textMetrics.test.js`, `exportImport.test.js`, `dataUrl.test.js`
-- **Video studio state** — `useVideoStore.test.js` (a remount joins the run in progress instead of starting a second one; speed and voice never cost a model call), `scriptCache.test.js` (what survives a reload, a full quota, and a browser that refuses to store anything)
+- **Video studio state** — `useVideoStore.test.js` (a remount joins the run in progress instead of starting a second one; speed and voice never cost a model call; scenes reach the screen while the rest are still being written), `scriptCache.test.js` (what survives a reload, a full quota, and a browser that refuses to store anything)
 
 Component suites opt into a DOM per file with a `// @vitest-environment jsdom`
 docblock; everything else runs in plain Node, so the fast majority of the suite
@@ -515,6 +529,7 @@ mobile data, which is what "how fast is it" ought to mean.
 | Sign up → editor usable | 4,627ms | ~2,400ms |
 | Tab switch, script time (x12) | 219–242ms | 95–136ms |
 | Third-party requests on first load | 6 | 0 |
+| AI Video: first watchable scene | 19.7s (nothing shown until all seven) | 3.6s |
 | AI Video: leaving the tab and returning | restarted from zero | 465ms |
 
 Four things were costing that, found by reading the request waterfall rather

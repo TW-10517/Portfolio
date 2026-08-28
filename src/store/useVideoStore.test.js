@@ -149,6 +149,31 @@ describe("the video script outliving its tab", () => {
     expect(state().status).toBe("ready");
   });
 
+  it("puts scenes on screen while the rest are still being written", async () => {
+    // The studio used to show nothing at all until the last scene was done.
+    // Watching the first one should not require waiting for the seventh.
+    state().sync();
+
+    let sawPartial = false;
+    for (let i = 0; i < 40 && !sawPartial; i += 1) {
+      await settle(10);
+      const { scenePlan, status } = state();
+      if (scenePlan?.partial) {
+        sawPartial = true;
+        expect(status).toBe("generating");
+        expect(scenePlan.scenes.length).toBeGreaterThan(0);
+        expect(scenePlan.scenes.every((s) => s.text)).toBe(true);
+      }
+    }
+    expect(sawPartial, "a partial plan should reach the store").toBe(true);
+
+    await settle();
+    // And the finished plan is not left flagged as still-writing, which is
+    // what the export button reads to decide whether the file would be whole.
+    expect(state().status).toBe("ready");
+    expect(state().scenePlan.partial).toBeUndefined();
+  });
+
   it("reports a failure rather than sitting on 'generating' forever", async () => {
     const failing = vi.spyOn(provider, "writeScript").mockRejectedValue(new Error("model gone"));
     state().setConfig((c) => ({ ...c, audience: "recruiter" }));

@@ -39,12 +39,44 @@ async function writeWithRetry(provider, scene, writeOptions, signal) {
 // to the offline LocalProvider per-scene if the cloud provider errors out
 // (rate limit, network, bad key, etc.) — the video always finishes.
 export async function writeNarration(scenePlan, provider, options = {}) {
-  const { onProgress, rate = 1, signal, ...writeOptions } = options;
+  const { onProgress, onPartial, rate = 1, signal, ...writeOptions } = options;
   const usedFallback = [];
   const total = scenePlan.scenes.length;
   let done = 0;
 
-  const writeOne = async (scene) => {
+  // What has been written so far, and how much of it has been handed over.
+  //
+  // Waiting for all seven scenes before showing any of them meant staring at a
+  // spinner for the better part of a minute while the machine already had a
+  // perfectly good opening scene sitting in memory. Handing over a prefix as
+  // it grows makes the first scene watchable in about the time one scene takes.
+  //
+  // A prefix, specifically, and not each scene the moment it lands: scenes are
+  // written concurrently and finish out of order, so scene four can be ready
+  // while scene two is not. A list with holes in it reads as a bug, and a
+  // video that cannot be played from the start is not a video. Every prefix is
+  // a real, shorter video.
+  const finished = new Array(total);
+  let published = 0;
+  const publishPrefix = () => {
+    if (!onPartial) return;
+    let next = published;
+    while (next < total && finished[next] !== undefined) next += 1;
+    // Nothing new, or everything: the complete plan is the return value, and
+    // announcing it twice would have callers render it as still-unfinished.
+    if (next === published || next === total) return;
+    published = next;
+    const scenes = finished.slice(0, published);
+    onPartial({
+      ...scenePlan,
+      scenes,
+      totalSeconds: scenes.reduce((sum, s) => sum + s.duration, 0),
+      usedFallback: [...usedFallback],
+      partial: true,
+    });
+  };
+
+  const writeOne = async (scene, index) => {
     // A real LLM takes seconds per scene, so a superseded rebuild must stop
     // here rather than run the whole plan to completion in the background —
     // with a local model that would keep the machine busy writing a script
@@ -52,29 +84,30 @@ export async function writeNarration(scenePlan, provider, options = {}) {
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
     const key = cacheKey(provider.name, scene, writeOptions);
-    const remembered = getCached(key);
-    if (remembered !== undefined) {
-      // The whole point of trying combinations: coming back to one you have
-      // already seen should cost nothing.
-      onProgress?.({ index: ++done, total, title: scene.title });
-      return { ...scene, text: remembered, duration: durationForText(remembered, rate), providerName: provider.name };
+    // The whole point of trying combinations: coming back to one you have
+    // already seen should cost nothing.
+    let text = getCached(key);
+    let usedProviderName = provider.name;
+
+    if (text === undefined) {
+      try {
+        text = await writeWithRetry(provider, scene, writeOptions, signal);
+        setCached(key, text);
+      } catch (e) {
+        if (e?.name === "AbortError") throw e;
+        text = await localProvider.writeScript(scene.brief, scene.type, { ...writeOptions, maxWords: scene.maxWords });
+        usedProviderName = localProvider.name;
+        usedFallback.push(scene.id);
+        // Deliberately not cached: this is what we fell back to, not what the
+        // chosen provider would say once it is reachable again.
+      }
     }
 
-    let text;
-    let usedProviderName = provider.name;
-    try {
-      text = await writeWithRetry(provider, scene, writeOptions, signal);
-      setCached(key, text);
-    } catch (e) {
-      if (e?.name === "AbortError") throw e;
-      text = await localProvider.writeScript(scene.brief, scene.type, { ...writeOptions, maxWords: scene.maxWords });
-      usedProviderName = localProvider.name;
-      usedFallback.push(scene.id);
-      // Deliberately not cached: this is what we fell back to, not what the
-      // chosen provider would say once it is reachable again.
-    }
+    const written = { ...scene, text, duration: durationForText(text, rate), providerName: usedProviderName };
+    finished[index] = written;
     onProgress?.({ index: ++done, total, title: scene.title });
-    return { ...scene, text, duration: durationForText(text, rate), providerName: usedProviderName };
+    publishPrefix();
+    return written;
   };
 
   // Written concurrently rather than one after another. Seven scenes against a

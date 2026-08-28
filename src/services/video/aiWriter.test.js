@@ -122,6 +122,49 @@ describe("writeNarration", () => {
     expect(second.scenes[0].text).toBe("Recovered: Body 0.");
   });
 
+  it("hands over a playable prefix as the scenes land", async () => {
+    // The wait used to be all-or-nothing: seven scenes against a local model
+    // is the better part of a minute of spinner, with a finished opening scene
+    // sitting in memory the whole time.
+    const provider = trackingProvider({ concurrency: 1, delay: 5 });
+    const seen = [];
+    const done = await writeNarration(plan(4), provider, { onPartial: (p) => seen.push(p) });
+
+    expect(seen.length).toBeGreaterThan(0);
+    // Every handover is a real video: growing, in order, and timed.
+    let previous = 0;
+    for (const step of seen) {
+      expect(step.scenes.length).toBeGreaterThan(previous);
+      previous = step.scenes.length;
+      expect(step.partial).toBe(true);
+      expect(step.scenes.map((s) => s.id)).toEqual(done.scenes.slice(0, step.scenes.length).map((s) => s.id));
+      expect(step.totalSeconds).toBe(step.scenes.reduce((sum, s) => sum + s.duration, 0));
+      expect(step.scenes.every((s) => s.text)).toBe(true);
+    }
+    // The finished plan is the return value; announcing it as a partial too
+    // would leave the studio showing a complete script as still unfinished.
+    expect(previous).toBeLessThan(4);
+    expect(done.partial).toBeUndefined();
+  });
+
+  it("never hands over a prefix with a hole in it", async () => {
+    // Written concurrently, the last scene can be ready long before the first.
+    // A scene list with gaps reads as a bug, and a video that cannot be played
+    // from the start is not a video.
+    const provider = trackingProvider({ concurrency: 4 });
+    provider.writeScript = async (brief) => {
+      const index = Number(brief.bio.match(/(\d+)/)[1]);
+      await new Promise((r) => setTimeout(r, (4 - index) * 15));
+      return `Written: ${brief.bio}`;
+    };
+    const seen = [];
+    await writeNarration(plan(4), provider, { onPartial: (p) => seen.push(p) });
+
+    for (const step of seen) {
+      expect(step.scenes.map((s) => s.id)).toEqual(step.scenes.map((_, i) => `s${i}`));
+    }
+  });
+
   it("stops as soon as the run is superseded", async () => {
     const controller = new AbortController();
     const provider = trackingProvider({ concurrency: 1, delay: 20 });
